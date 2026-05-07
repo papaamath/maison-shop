@@ -5,6 +5,40 @@ import { useCart } from "../context/CartContext";
 import Navbar from "../components/Navbar";
 import { formatPrix } from "../utils/format";
 import { useNavigate } from "react-router-dom";
+import emailjs from "@emailjs/browser";
+
+const EMAILJS_SERVICE_ID = "service_hucapuj";
+const EMAILJS_TEMPLATE_ID = "template_s4bau5m";
+const EMAILJS_PUBLIC_KEY = "GrsANLfPqrMFqvCHG";
+
+async function envoyerEmailAdmin(commande) {
+  const articles = commande.articles
+    .map(a => `• ${a.nom} x${a.quantite} — ${Number(a.prix * a.quantite).toLocaleString("fr-SN")} FCFA`)
+    .join("\n");
+
+  const params = {
+    client_nom: `${commande.client.prenom} ${commande.client.nom}`,
+    client_telephone: commande.client.telephone,
+    client_email: commande.client.email,
+    client_ville: `${commande.client.ville}, ${commande.client.pays}`,
+    articles: articles,
+    total: Number(commande.total).toLocaleString("fr-SN"),
+  };
+
+  console.log("📧 Envoi email avec params:", params);
+
+  try {
+    const result = await emailjs.send(
+      EMAILJS_SERVICE_ID,
+      EMAILJS_TEMPLATE_ID,
+      params,
+      EMAILJS_PUBLIC_KEY
+    );
+    console.log("✅ Email envoyé:", result.status, result.text);
+  } catch (err) {
+    console.error("❌ Erreur email:", err);
+  }
+}
 
 export default function Checkout() {
   const { cart, total, clearCart } = useCart();
@@ -33,6 +67,7 @@ export default function Checkout() {
 
     setLoading(true);
     try {
+      // 1. Sauvegarde dans Firebase
       await addDoc(collection(db, "commandes"), {
         client: form,
         articles: cart.map(i => ({
@@ -47,10 +82,23 @@ export default function Checkout() {
         createdAt: serverTimestamp(),
       });
 
+      console.log("✅ Commande sauvegardée dans Firebase");
+
+      // 2. Envoie l'email
+      await envoyerEmailAdmin({
+        client: form,
+        articles: cart.map(i => ({
+          nom: i.nom,
+          quantite: i.qty,
+          prix: i.prix,
+        })),
+        total: totalFinal,
+      });
+
       clearCart();
       navigate("/confirmation");
     } catch (err) {
-      console.error(err);
+      console.error("❌ Erreur commande:", err);
       alert("Erreur lors de la commande. Réessayez.");
     }
     setLoading(false);
@@ -81,7 +129,6 @@ export default function Checkout() {
         <h1 className="font-black text-3xl mb-8">Finaliser la commande</h1>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-
           {/* Formulaire */}
           <form onSubmit={handleCommande} className="space-y-4">
             <div className="bg-white rounded-xl border border-gray-200 p-6">
@@ -196,16 +243,18 @@ export default function Checkout() {
               <div className="space-y-3">
                 {cart.map(item => (
                   <div key={item.id} className="flex items-center gap-3">
-                    <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center text-xl flex-shrink-0">
+                    <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center text-xl flex-shrink-0 overflow-hidden">
                       {item.image ? (
-                        <img src={item.image} alt={item.nom} className="w-full h-full object-cover rounded-lg" />
+                        <img src={item.image} alt={item.nom} className="w-full h-full object-cover" />
                       ) : "📦"}
                     </div>
                     <div className="flex-1">
                       <p className="font-medium text-sm">{item.nom}</p>
                       <p className="text-gray-400 text-xs">Qté : {item.qty}</p>
                     </div>
-                    <span className="font-semibold text-sm">{formatPrix(item.prix * item.qty)}</span>
+                    <span className="font-semibold text-sm">
+                      {formatPrix(item.prix * item.qty)}
+                    </span>
                   </div>
                 ))}
               </div>
