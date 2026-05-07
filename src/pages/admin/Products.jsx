@@ -3,6 +3,7 @@ import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from "firebase
 import { db } from "../../firebase/config";
 import { Link } from "react-router-dom";
 import { formatPrix } from "../../utils/format";
+import ImageUpload from "../../components/ImageUpload";
 
 const CATEGORIES = ["Vêtements", "Accessoires", "Chaussures", "Électronique", "Maison"];
 const FORM_VIDE = { nom: "", prix: "", categorie: "Vêtements", description: "", stock: "", image: "" };
@@ -136,20 +137,23 @@ export default function AdminProducts() {
                   className={`grid grid-cols-12 px-6 py-4 items-center ${i < produits.length - 1 ? "border-b border-gray-100" : ""}`}
                 >
                   <div className="col-span-4 flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-lg flex-shrink-0">
+                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-lg flex-shrink-0 overflow-hidden">
                       {p.image ? (
-                        <img src={p.image} alt={p.nom} className="w-full h-full object-cover rounded-lg" />
+                        <img src={p.image} alt={p.nom} className="w-full h-full object-cover" />
                       ) : "📦"}
                     </div>
                     <div>
-                      <p className="font-medium text-sm">{p.nom || p.Nom}</p>
-                      <p className="text-gray-400 text-xs line-clamp-1">{p.description || p.Description}</p>
+                      <p className="font-medium text-sm">{p.nom}</p>
+                      <p className="text-gray-400 text-xs line-clamp-1">{p.description}</p>
                     </div>
                   </div>
-                  <span className="col-span-2 text-sm text-gray-500">{p.categorie || p.Cathégorie}</span>
-                  <span className="col-span-2 font-semibold text-sm">{formatPrix(Number(p.prix || p.Prix || 0))}</span>
-                  <span className={`col-span-2 text-sm font-medium ${Number(p.stock || p.Stock) === 0 ? "text-red-500" : Number(p.stock || p.Stock) <= 5 ? "text-yellow-500" : "text-green-600"}`}>
-                    {Number(p.stock || p.Stock) === 0 ? "Rupture ⚠️" : `${p.stock || p.Stock} unités`}
+                  <span className="col-span-2 text-sm text-gray-500">{p.categorie}</span>
+                  <span className="col-span-2 font-semibold text-sm">{formatPrix(Number(p.prix || 0))}</span>
+                  <span className={`col-span-2 text-sm font-medium ${
+                    Number(p.stock) === 0 ? "text-red-500" :
+                    Number(p.stock) <= 5 ? "text-yellow-500" : "text-green-600"
+                  }`}>
+                    {Number(p.stock) === 0 ? "Rupture ⚠️" : `${p.stock} unités`}
                   </span>
                   <div className="col-span-2 flex gap-2">
                     <button
@@ -175,7 +179,7 @@ export default function AdminProducts() {
       {/* Modal formulaire */}
       {showForm && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center px-4">
-          <div className="bg-white rounded-2xl p-8 w-full max-w-lg max-h-screen overflow-y-auto">
+          <div className="bg-white rounded-2xl p-8 w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <h3 className="font-black text-xl">
                 {editing ? "Modifier le produit" : "Nouveau produit"}
@@ -242,18 +246,11 @@ export default function AdminProducts() {
                 />
               </div>
 
-              <div>
-                <label className="text-sm text-gray-500 block mb-1">URL de l'image</label>
-                <input
-                  value={form.image}
-                  onChange={e => setForm(f => ({ ...f, image: e.target.value }))}
-                  className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400"
-                  placeholder="https://exemple.com/image.jpg"
-                />
-                {form.image && (
-                  <img src={form.image} alt="preview" className="mt-2 h-24 w-24 object-cover rounded-lg border border-gray-200" />
-                )}
-              </div>
+              {/* Upload image Cloudinary */}
+              <ImageUpload
+                onUpload={url => setForm(f => ({ ...f, image: url }))}
+                imageActuelle={form.image}
+              />
 
               <div className="flex gap-3 pt-2">
                 <button
