@@ -5,7 +5,6 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import Navbar from "../components/Navbar";
 import { formatPrix } from "../utils/format";
-import { doc, getDoc, collection, getDocs, addDoc, serverTimestamp } from "firebase/firestore";
 
 export default function Product() {
   const { id } = useParams();
@@ -17,11 +16,6 @@ export default function Product() {
   const [onglet, setOnglet] = useState("description");
   const { addToCart } = useCart();
   const navigate = useNavigate();
-  const [avis, setAvis] = useState([]);
- const [showAvisForm, setShowAvisForm] = useState(false);
- const [avisForm, setAvisForm] = useState({ nom: "", note: 5, commentaire: "" });
- const [avisLoading, setAvisLoading] = useState(false);
-
   useEffect(() => {
     async function charger() {
       const snap = await getDoc(doc(db, "produits", id));
@@ -38,12 +32,6 @@ export default function Product() {
         setSimilaires(all);
       }
       setLoading(false);
-      // Dans la fonction charger(), après avoir chargé le produit
-const avisSnap = await getDocs(collection(db, "produits", id, "avis"));
-const avisData = avisSnap.docs
-  .map(d => ({ id: d.id, ...d.data() }))
-  .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-setAvis(avisData);
     }
     charger();
     window.scrollTo(0, 0);
@@ -279,9 +267,6 @@ setAvis(avisData);
                 { icon: "💰", title: "Frais de livraison", desc: "2 500 FCFA. Gratuite pour toute commande supérieure à 50 000 FCFA." },
                 { icon: "↩️", title: "Politique de retour", desc: "Retours acceptés sous 30 jours après réception. Produit non utilisé et dans son emballage d'origine." },
                 { icon: "📞", title: "Service client", desc: "Contactez-nous par WhatsApp ou email pour tout problème avec votre commande." },
-                { id: "description", label: "Description" },
-                { id: "avis", label: `Avis clients (${avis.length})` },
-                { id: "livraison", label: "Livraison & Retours" },
               ].map(item => (
                 <div key={item.title} className="flex gap-4 p-4 bg-gray-50 rounded-xl">
                   <span className="text-2xl">{item.icon}</span>
@@ -294,146 +279,7 @@ setAvis(avisData);
             </div>
           )}
         </div>
-        {onglet === "avis" && (
-  <div className="max-w-2xl">
-    {/* Note moyenne */}
-    {avis.length > 0 && (
-      <div className="bg-gray-50 rounded-2xl p-6 mb-6 flex items-center gap-6">
-        <div className="text-center">
-          <p className="font-black text-5xl text-gray-900">
-            {(avis.reduce((a, v) => a + v.note, 0) / avis.length).toFixed(1)}
-          </p>
-          <div className="flex gap-0.5 justify-center mt-1">
-            {[1,2,3,4,5].map(s => (
-              <span key={s} className={`text-xl ${
-                s <= Math.round(avis.reduce((a,v) => a+v.note,0)/avis.length)
-                  ? "text-yellow-400" : "text-gray-200"
-              }`}>★</span>
-            ))}
-          </div>
-          <p className="text-gray-400 text-sm mt-1">{avis.length} avis</p>
-        </div>
-        <div className="flex-1">
-          {[5,4,3,2,1].map(note => {
-            const count = avis.filter(a => a.note === note).length;
-            const pct = avis.length > 0 ? (count / avis.length) * 100 : 0;
-            return (
-              <div key={note} className="flex items-center gap-2 mb-1">
-                <span className="text-xs text-gray-500 w-4">{note}</span>
-                <span className="text-yellow-400 text-xs">★</span>
-                <div className="flex-1 bg-gray-200 rounded-full h-2">
-                  <div className="bg-yellow-400 h-2 rounded-full" style={{ width: `${pct}%` }} />
-                </div>
-                <span className="text-xs text-gray-400 w-4">{count}</span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    )}
-
-    {/* Bouton laisser un avis */}
-    {!showAvisForm && (
-      <button
-        onClick={() => setShowAvisForm(true)}
-        className="mb-6 bg-gray-900 text-white px-6 py-3 rounded-xl font-medium hover:bg-gray-700 transition"
-      >
-        ✍️ Laisser un avis
-      </button>
-    )}
-
-    {/* Formulaire avis */}
-    {showAvisForm && (
-      <form onSubmit={soumettreAvis} className="bg-gray-50 rounded-2xl p-6 mb-6 space-y-4">
-        <h3 className="font-bold text-lg">Votre avis</h3>
-        <div>
-          <label className="text-sm text-gray-500 block mb-1">Votre nom</label>
-          <input
-            value={avisForm.nom}
-            onChange={e => setAvisForm(f => ({ ...f, nom: e.target.value }))}
-            required
-            className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400 bg-white"
-            placeholder="Mamadou D."
-          />
-        </div>
-        <div>
-          <label className="text-sm text-gray-500 block mb-2">Note</label>
-          <div className="flex gap-2">
-            {[1,2,3,4,5].map(s => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setAvisForm(f => ({ ...f, note: s }))}
-                className={`text-3xl transition ${s <= avisForm.note ? "text-yellow-400" : "text-gray-200 hover:text-yellow-300"}`}
-              >
-                ★
-              </button>
-            ))}
-          </div>
-        </div>
-        <div>
-          <label className="text-sm text-gray-500 block mb-1">Commentaire</label>
-          <textarea
-            value={avisForm.commentaire}
-            onChange={e => setAvisForm(f => ({ ...f, commentaire: e.target.value }))}
-            required
-            rows={3}
-            className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400 bg-white resize-none"
-            placeholder="Partagez votre expérience avec ce produit..."
-          />
-        </div>
-        <div className="flex gap-3">
-          <button
-            type="button"
-            onClick={() => setShowAvisForm(false)}
-            className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-lg font-medium hover:bg-gray-100 transition"
-          >
-            Annuler
-          </button>
-          <button
-            type="submit"
-            disabled={avisLoading}
-            className="flex-1 bg-gray-900 text-white py-2.5 rounded-lg font-medium hover:bg-gray-700 transition disabled:opacity-50"
-          >
-            {avisLoading ? "Envoi..." : "Publier l'avis"}
-          </button>
-        </div>
-      </form>
-    )}
-
-    {/* Liste des avis */}
-    {avis.length === 0 ? (
-      <div className="text-center py-12 text-gray-400">
-        <p className="text-4xl mb-3">💬</p>
-        <p className="font-semibold">Aucun avis pour l'instant</p>
-        <p className="text-sm mt-1">Soyez le premier à donner votre avis !</p>
-      </div>
-    ) : (
-      <div className="space-y-4">
-        {avis.map(a => (
-          <div key={a.id} className="bg-gray-50 rounded-xl p-4">
-            <div className="flex items-center justify-between mb-2">
-              <p className="font-bold text-sm">{a.nom}</p>
-              <div className="flex gap-0.5">
-                {[1,2,3,4,5].map(s => (
-                  <span key={s} className={`text-sm ${s <= a.note ? "text-yellow-400" : "text-gray-200"}`}>★</span>
-                ))}
-              </div>
-            </div>
-            <p className="text-gray-600 text-sm leading-relaxed">{a.commentaire}</p>
-            {a.createdAt?.seconds && (
-              <p className="text-gray-400 text-xs mt-2">
-                {new Date(a.createdAt.seconds * 1000).toLocaleDateString("fr-SN", {
-                  day: "2-digit", month: "long", year: "numeric"
-                })}
-              </p>
-            )}
-          </div>
-        ))}
-      </div>
-    )}
-  </div>
-)}
+        
 
         {/* Produits similaires */}
         {similaires.length > 0 && (
