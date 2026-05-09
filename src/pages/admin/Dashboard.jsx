@@ -115,6 +115,9 @@ export default function Dashboard() {
           <Link to="/admin/orders" className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-400 hover:bg-gray-700 hover:text-white text-sm transition">
             🛒 Commandes
           </Link>
+          <Link to="/admin/promos" className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-400 hover:bg-gray-700 hover:text-white text-sm transition">
+            🎟️ Promotions
+          </Link>
           <Link to="/shop" className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-400 hover:bg-gray-700 hover:text-white text-sm transition">
             🌐 Voir la boutique
           </Link>

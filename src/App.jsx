@@ -12,6 +12,7 @@ import Dashboard from "./pages/admin/Dashboard";
 import AdminProducts from "./pages/admin/Products";
 import AdminOrders from "./pages/admin/Orders";
 import Product from "./pages/Product";
+import AdminPromos from "./pages/admin/Promos";
 
 export default function App() {
   return (
@@ -32,6 +33,7 @@ export default function App() {
           <Route path="/admin/products" element={<ProtectedRoute><AdminProducts /></ProtectedRoute>} />
           <Route path="/admin/orders" element={<ProtectedRoute><AdminOrders /></ProtectedRoute>} />
           <Route path="/product/:id" element={<Product />} />
+          <Route path="/admin/promos" element={<ProtectedRoute><AdminPromos /></ProtectedRoute>} />
         </Routes>
       </BrowserRouter>
     </CartProvider>
