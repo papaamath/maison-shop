@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, getDocs, query, where, serverTimestamp, updateDoc, doc } from "firebase/firestore";
 import { db } from "../firebase/config";
 import { useCart } from "../context/CartContext";
 import Navbar from "../components/Navbar";
@@ -16,25 +16,20 @@ async function envoyerEmailAdmin(commande) {
     .map(a => `• ${a.nom} x${a.quantite} — ${Number(a.prix * a.quantite).toLocaleString("fr-SN")} FCFA`)
     .join("\n");
 
-  const params = {
-    client_nom: `${commande.client.prenom} ${commande.client.nom}`,
-    client_telephone: commande.client.telephone,
-    client_email: commande.client.email,
-    client_ville: `${commande.client.ville}, ${commande.client.pays}`,
-    articles: articles,
-    total: Number(commande.total).toLocaleString("fr-SN"),
-  };
-
-  console.log("📧 Envoi email avec params:", params);
-
   try {
-    const result = await emailjs.send(
+    await emailjs.send(
       EMAILJS_SERVICE_ID,
       EMAILJS_TEMPLATE_ID,
-      params,
+      {
+        client_nom: `${commande.client.prenom} ${commande.client.nom}`,
+        client_telephone: commande.client.telephone,
+        client_email: commande.client.email,
+        client_ville: `${commande.client.ville}, ${commande.client.pays}`,
+        articles,
+        total: Number(commande.total).toLocaleString("fr-SN"),
+      },
       EMAILJS_PUBLIC_KEY
     );
-    console.log("✅ Email envoyé:", result.status, result.text);
   } catch (err) {
     console.error("❌ Erreur email:", err);
   }
@@ -44,6 +39,10 @@ export default function Checkout() {
   const { cart, total, clearCart } = useCart();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [codePromo, setCodePromo] = useState("");
+  const [promoAppliquee, setPromoAppliquee] = useState(null);
+  const [promoError, setPromoError] = useState("");
+  const [promoLoading, setPromoLoading] = useState(false);
   const [form, setForm] = useState({
     nom: "",
     prenom: "",
@@ -55,10 +54,47 @@ export default function Checkout() {
   });
 
   const livraison = total >= 50000 ? 0 : 2500;
-  const totalFinal = total + livraison;
+
+  // Calcul réduction
+  function calcReduction() {
+    if (!promoAppliquee) return 0;
+    if (promoAppliquee.type === "pourcentage") {
+      return Math.round(total * promoAppliquee.valeur / 100);
+    }
+    return Math.min(promoAppliquee.valeur, total);
+  }
+
+  const reduction = calcReduction();
+  const totalFinal = total - reduction + livraison;
 
   function handleChange(e) {
     setForm(f => ({ ...f, [e.target.name]: e.target.value }));
+  }
+
+  async function appliquerPromo() {
+    if (!codePromo.trim()) return;
+    setPromoLoading(true);
+    setPromoError("");
+    setPromoAppliquee(null);
+
+    try {
+      const snap = await getDocs(collection(db, "promos"));
+      const toutes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const promo = toutes.find(p =>
+        p.code === codePromo.toUpperCase() && p.actif
+      );
+
+      if (!promo) {
+        setPromoError("Code promo invalide ou expiré.");
+      } else if (promo.minCommande > 0 && total < promo.minCommande) {
+        setPromoError(`Commande minimum de ${formatPrix(promo.minCommande)} requis.`);
+      } else {
+        setPromoAppliquee(promo);
+      }
+    } catch (err) {
+      setPromoError("Erreur lors de la vérification.");
+    }
+    setPromoLoading(false);
   }
 
   async function handleCommande(e) {
@@ -67,7 +103,6 @@ export default function Checkout() {
 
     setLoading(true);
     try {
-      // 1. Sauvegarde dans Firebase
       await addDoc(collection(db, "commandes"), {
         client: form,
         articles: cart.map(i => ({
@@ -78,27 +113,29 @@ export default function Checkout() {
         })),
         total: totalFinal,
         livraison,
+        reduction,
+        codePromo: promoAppliquee?.code || null,
         statut: "En attente",
         createdAt: serverTimestamp(),
       });
 
-      console.log("✅ Commande sauvegardée dans Firebase");
+      // Incrémente le compteur d'utilisations
+      if (promoAppliquee) {
+        await updateDoc(doc(db, "promos", promoAppliquee.id), {
+          utilisations: (promoAppliquee.utilisations || 0) + 1,
+        });
+      }
 
-      // 2. Envoie l'email
       await envoyerEmailAdmin({
         client: form,
-        articles: cart.map(i => ({
-          nom: i.nom,
-          quantite: i.qty,
-          prix: i.prix,
-        })),
+        articles: cart.map(i => ({ nom: i.nom, quantite: i.qty, prix: i.prix })),
         total: totalFinal,
       });
 
       clearCart();
       navigate("/confirmation");
     } catch (err) {
-      console.error("❌ Erreur commande:", err);
+      console.error(err);
       alert("Erreur lors de la commande. Réessayez.");
     }
     setLoading(false);
@@ -227,12 +264,57 @@ export default function Checkout() {
               </div>
             </div>
 
+            {/* Code promo */}
+            <div className="bg-white rounded-xl border border-gray-200 p-6">
+              <h2 className="font-bold text-lg mb-4">🎟️ Code promo</h2>
+              {promoAppliquee ? (
+                <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-lg px-4 py-3">
+                  <div>
+                    <p className="font-bold text-green-700">{promoAppliquee.code} appliqué ✅</p>
+                    <p className="text-sm text-green-600">
+                      Réduction de {promoAppliquee.type === "pourcentage"
+                        ? `${promoAppliquee.valeur}%`
+                        : formatPrix(promoAppliquee.valeur)
+                      }
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setPromoAppliquee(null); setCodePromo(""); }}
+                    className="text-red-500 text-sm hover:text-red-700"
+                  >
+                    Retirer
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-3">
+                  <input
+                    value={codePromo}
+                    onChange={e => setCodePromo(e.target.value.toUpperCase())}
+                    placeholder="Entrez votre code"
+                    className="flex-1 border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400 font-bold tracking-widest uppercase"
+                  />
+                  <button
+                    type="button"
+                    onClick={appliquerPromo}
+                    disabled={promoLoading || !codePromo}
+                    className="bg-gray-900 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-700 transition disabled:opacity-50"
+                  >
+                    {promoLoading ? "..." : "Appliquer"}
+                  </button>
+                </div>
+              )}
+              {promoError && (
+                <p className="text-red-500 text-sm mt-2">{promoError}</p>
+              )}
+            </div>
+
             <button
               type="submit"
               disabled={loading}
               className="w-full bg-gray-900 text-white py-4 rounded-xl font-bold text-lg hover:bg-gray-700 transition disabled:opacity-50"
             >
-              {loading ? "Envoi en cours..." : `Confirmer la commande — ${formatPrix(totalFinal)}`}
+              {loading ? "Envoi en cours..." : `Confirmer — ${formatPrix(totalFinal)}`}
             </button>
           </form>
 
@@ -243,7 +325,7 @@ export default function Checkout() {
               <div className="space-y-3">
                 {cart.map(item => (
                   <div key={item.id} className="flex items-center gap-3">
-                    <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center text-xl flex-shrink-0 overflow-hidden">
+                    <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden">
                       {item.image ? (
                         <img src={item.image} alt={item.nom} className="w-full h-full object-cover" />
                       ) : "📦"}
@@ -252,9 +334,7 @@ export default function Checkout() {
                       <p className="font-medium text-sm">{item.nom}</p>
                       <p className="text-gray-400 text-xs">Qté : {item.qty}</p>
                     </div>
-                    <span className="font-semibold text-sm">
-                      {formatPrix(item.prix * item.qty)}
-                    </span>
+                    <span className="font-semibold text-sm">{formatPrix(item.prix * item.qty)}</span>
                   </div>
                 ))}
               </div>
@@ -264,6 +344,12 @@ export default function Checkout() {
                   <span className="text-gray-500">Sous-total</span>
                   <span>{formatPrix(total)}</span>
                 </div>
+                {reduction > 0 && (
+                  <div className="flex justify-between text-sm text-green-600 font-medium">
+                    <span>🎟️ Réduction ({promoAppliquee?.code})</span>
+                    <span>- {formatPrix(reduction)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Livraison</span>
                   <span className={livraison === 0 ? "text-green-600 font-medium" : ""}>
