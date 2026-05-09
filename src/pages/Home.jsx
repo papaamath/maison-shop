@@ -77,9 +77,9 @@ export default function Home() {
           {/* Stats */}
           <div className="flex md:flex-col gap-4">
             {[
-              { label: "Produits disponibles", value: "100+" },
-              { label: "Clients satisfaits", value: "500+" },
-              { label: "Livraison", value: "24-48h" },
+              { label: "Produits disponibles", value: "50+" },
+              { label: "Livraison rapide", value: "24h" },
+              { label: "Satisfaction", value: "100%" },
             ].map(s => (
               <div key={s.label} className="bg-white/10 backdrop-blur rounded-2xl p-5 text-center min-w-32">
                 <p className="font-black text-3xl text-white">{s.value}</p>
@@ -228,9 +228,9 @@ export default function Home() {
           <div>
             <h4 className="font-bold text-white mb-4">Contact</h4>
             <div className="space-y-2 text-sm">
-              <p>📞 +221 XX XXX XX XX</p>
-              <p>📧 contact@maison-shop.com</p>
-              <p>📍 Dakar, Sénégal</p>
+              <p>📞 +221 76 873 07 31</p>
+              <p>📧 syllaissa735@gmail.com</p>
+              <p>📍Mbed Fass , Dakar, Sénégal</p>
             </div>
           </div>
         </div>
