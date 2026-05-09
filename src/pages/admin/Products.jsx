@@ -78,7 +78,7 @@ export default function AdminProducts() {
     <div className="min-h-screen bg-gray-50 flex">
 
       {/* Sidebar */}
-      <aside className="w-56 bg-gray-900 min-h-screen flex flex-col">
+      <aside className="w-56 bg-gray-900 min-h-screen flex flex-col fixed left-0 top-0">
         <div className="p-6 border-b border-gray-700">
           <h1 className="font-black text-white text-xl">MAISON<span className="text-red-500">.</span></h1>
           <p className="text-gray-400 text-xs mt-1">Administration</p>
@@ -103,7 +103,7 @@ export default function AdminProducts() {
       </aside>
 
       {/* Contenu */}
-      <main className="flex-1 p-8">
+      <main className="flex-1 ml-56 p-8">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h2 className="font-black text-2xl">Produits</h2>
@@ -249,7 +249,6 @@ export default function AdminProducts() {
                 />
               </div>
 
-              {/* Upload image Cloudinary */}
               <ImageUpload
                 onUpload={url => setForm(f => ({ ...f, image: url }))}
                 imageActuelle={form.image}
