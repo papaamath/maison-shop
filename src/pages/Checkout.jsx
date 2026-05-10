@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { collection, addDoc, getDocs, query, where, serverTimestamp, updateDoc, doc } from "firebase/firestore";
+import { collection, addDoc, getDocs, serverTimestamp, updateDoc, doc } from "firebase/firestore";
 import { db } from "../firebase/config";
 import { useCart } from "../context/CartContext";
 import Navbar from "../components/Navbar";
@@ -15,7 +15,6 @@ async function envoyerEmailAdmin(commande) {
   const articles = commande.articles
     .map(a => `• ${a.nom} x${a.quantite} — ${Number(a.prix * a.quantite).toLocaleString("fr-SN")} FCFA`)
     .join("\n");
-
   try {
     await emailjs.send(
       EMAILJS_SERVICE_ID,
@@ -24,7 +23,7 @@ async function envoyerEmailAdmin(commande) {
         client_nom: `${commande.client.prenom} ${commande.client.nom}`,
         client_telephone: commande.client.telephone,
         client_email: commande.client.email,
-        client_ville: `${commande.client.ville}, ${commande.client.pays}`,
+        client_ville: `${commande.client.ville || "Retrait en magasin"}, ${commande.client.pays || ""}`,
         articles,
         total: Number(commande.total).toLocaleString("fr-SN"),
       },
@@ -39,6 +38,7 @@ export default function Checkout() {
   const { cart, total, clearCart } = useCart();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [modeLivraison, setModeLivraison] = useState("livraison");
   const [codePromo, setCodePromo] = useState("");
   const [promoAppliquee, setPromoAppliquee] = useState(null);
   const [promoError, setPromoError] = useState("");
@@ -53,14 +53,11 @@ export default function Checkout() {
     pays: "Sénégal",
   });
 
-  const livraison = total >= 50000 ? 0 : 2500;
+  const livraison = modeLivraison === "retrait" ? 0 : (total >= 50000 ? 0 : 2500);
 
-  // Calcul réduction
   function calcReduction() {
     if (!promoAppliquee) return 0;
-    if (promoAppliquee.type === "pourcentage") {
-      return Math.round(total * promoAppliquee.valeur / 100);
-    }
+    if (promoAppliquee.type === "pourcentage") return Math.round(total * promoAppliquee.valeur / 100);
     return Math.min(promoAppliquee.valeur, total);
   }
 
@@ -76,14 +73,10 @@ export default function Checkout() {
     setPromoLoading(true);
     setPromoError("");
     setPromoAppliquee(null);
-
     try {
       const snap = await getDocs(collection(db, "promos"));
       const toutes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const promo = toutes.find(p =>
-        p.code === codePromo.toUpperCase() && p.actif
-      );
-
+      const promo = toutes.find(p => p.code === codePromo.toUpperCase() && p.actif);
       if (!promo) {
         setPromoError("Code promo invalide ou expiré.");
       } else if (promo.minCommande > 0 && total < promo.minCommande) {
@@ -100,7 +93,6 @@ export default function Checkout() {
   async function handleCommande(e) {
     e.preventDefault();
     if (cart.length === 0) return;
-
     setLoading(true);
     try {
       await addDoc(collection(db, "commandes"), {
@@ -115,11 +107,11 @@ export default function Checkout() {
         livraison,
         reduction,
         codePromo: promoAppliquee?.code || null,
+        modeLivraison,
         statut: "En attente",
         createdAt: serverTimestamp(),
       });
 
-      // Incrémente le compteur d'utilisations
       if (promoAppliquee) {
         await updateDoc(doc(db, "promos", promoAppliquee.id), {
           utilisations: (promoAppliquee.utilisations || 0) + 1,
@@ -168,6 +160,43 @@ export default function Checkout() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Formulaire */}
           <form onSubmit={handleCommande} className="space-y-4">
+
+            {/* Mode de réception */}
+            <div className="bg-white rounded-xl border border-gray-200 p-6">
+              <h2 className="font-bold text-lg mb-4">Mode de réception</h2>
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  type="button"
+                  onClick={() => setModeLivraison("livraison")}
+                  className={`p-4 rounded-xl border-2 text-left transition ${
+                    modeLivraison === "livraison"
+                      ? "border-gray-900 bg-gray-50"
+                      : "border-gray-200 hover:border-gray-300"
+                  }`}
+                >
+                  <p className="text-2xl mb-2">🚚</p>
+                  <p className="font-bold text-sm">Livraison à domicile</p>
+                  <p className="text-xs text-gray-400 mt-1">24-48h · 2 500 FCFA</p>
+                  <p className="text-xs text-green-600 mt-1">Gratuite dès 50 000 FCFA</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModeLivraison("retrait")}
+                  className={`p-4 rounded-xl border-2 text-left transition ${
+                    modeLivraison === "retrait"
+                      ? "border-gray-900 bg-gray-50"
+                      : "border-gray-200 hover:border-gray-300"
+                  }`}
+                >
+                  <p className="text-2xl mb-2">🏪</p>
+                  <p className="font-bold text-sm">Retrait en magasin</p>
+                  <p className="text-xs text-gray-400 mt-1">Dakar · Gratuit</p>
+                  <p className="text-xs text-green-600 mt-1">Disponible sous 24h</p>
+                </button>
+              </div>
+            </div>
+
+            {/* Informations personnelles */}
             <div className="bg-white rounded-xl border border-gray-200 p-6">
               <h2 className="font-bold text-lg mb-4">Informations personnelles</h2>
               <div className="grid grid-cols-2 gap-4">
@@ -219,50 +248,63 @@ export default function Checkout() {
               </div>
             </div>
 
-            <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <h2 className="font-bold text-lg mb-4">Adresse de livraison</h2>
-              <div>
-                <label className="text-sm text-gray-500 block mb-1">Adresse</label>
-                <input
-                  name="adresse"
-                  value={form.adresse}
-                  onChange={handleChange}
-                  required
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-400"
-                  placeholder="Rue 10, Quartier Almadies"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4 mt-4">
+            {/* Adresse livraison — seulement si livraison */}
+            {modeLivraison === "livraison" && (
+              <div className="bg-white rounded-xl border border-gray-200 p-6">
+                <h2 className="font-bold text-lg mb-4">Adresse de livraison</h2>
                 <div>
-                  <label className="text-sm text-gray-500 block mb-1">Ville</label>
+                  <label className="text-sm text-gray-500 block mb-1">Adresse</label>
                   <input
-                    name="ville"
-                    value={form.ville}
+                    name="adresse"
+                    value={form.adresse}
                     onChange={handleChange}
                     required
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-400"
-                    placeholder="Dakar"
+                    placeholder="Rue 10, Quartier Almadies"
                   />
                 </div>
-                <div>
-                  <label className="text-sm text-gray-500 block mb-1">Pays</label>
-                  <select
-                    name="pays"
-                    value={form.pays}
-                    onChange={handleChange}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-400 bg-white"
-                  >
-                    <option>Sénégal</option>
-                    <option>Côte d'Ivoire</option>
-                    <option>Mali</option>
-                    <option>Guinée</option>
-                    <option>Burkina Faso</option>
-                    <option>Cameroun</option>
-                    <option>France</option>
-                  </select>
+                <div className="grid grid-cols-2 gap-4 mt-4">
+                  <div>
+                    <label className="text-sm text-gray-500 block mb-1">Ville</label>
+                    <input
+                      name="ville"
+                      value={form.ville}
+                      onChange={handleChange}
+                      required
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-400"
+                      placeholder="Dakar"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-500 block mb-1">Pays</label>
+                    <select
+                      name="pays"
+                      value={form.pays}
+                      onChange={handleChange}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-400 bg-white"
+                    >
+                      <option>Sénégal</option>
+                      <option>Côte d'Ivoire</option>
+                      <option>Mali</option>
+                      <option>Guinée</option>
+                      <option>Burkina Faso</option>
+                      <option>Cameroun</option>
+                      <option>France</option>
+                    </select>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
+
+            {/* Info retrait */}
+            {modeLivraison === "retrait" && (
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                <p className="font-bold text-blue-700 mb-1">🏪 Informations de retrait</p>
+                <p className="text-sm text-blue-600">Adresse : Votre adresse magasin ici</p>
+                <p className="text-sm text-blue-600">Horaires : Lun-Sam 9h-18h</p>
+                <p className="text-sm text-blue-600 mt-1">Vous serez contacté quand votre commande est prête !</p>
+              </div>
+            )}
 
             {/* Code promo */}
             <div className="bg-white rounded-xl border border-gray-200 p-6">
@@ -272,10 +314,7 @@ export default function Checkout() {
                   <div>
                     <p className="font-bold text-green-700">{promoAppliquee.code} appliqué ✅</p>
                     <p className="text-sm text-green-600">
-                      Réduction de {promoAppliquee.type === "pourcentage"
-                        ? `${promoAppliquee.valeur}%`
-                        : formatPrix(promoAppliquee.valeur)
-                      }
+                      Réduction de {promoAppliquee.type === "pourcentage" ? `${promoAppliquee.valeur}%` : formatPrix(promoAppliquee.valeur)}
                     </p>
                   </div>
                   <button
@@ -304,9 +343,7 @@ export default function Checkout() {
                   </button>
                 </div>
               )}
-              {promoError && (
-                <p className="text-red-500 text-sm mt-2">{promoError}</p>
-              )}
+              {promoError && <p className="text-red-500 text-sm mt-2">{promoError}</p>}
             </div>
 
             <button
@@ -353,14 +390,9 @@ export default function Checkout() {
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Livraison</span>
                   <span className={livraison === 0 ? "text-green-600 font-medium" : ""}>
-                    {livraison === 0 ? "Gratuite 🎉" : formatPrix(livraison)}
+                    {livraison === 0 ? (modeLivraison === "retrait" ? "Retrait gratuit 🏪" : "Gratuite 🎉") : formatPrix(livraison)}
                   </span>
                 </div>
-                {livraison > 0 && (
-                  <p className="text-xs text-gray-400">
-                    Livraison gratuite dès {formatPrix(50000)} d'achat
-                  </p>
-                )}
                 <div className="flex justify-between font-black text-lg border-t border-gray-100 pt-2 mt-2">
                   <span>Total</span>
                   <span>{formatPrix(totalFinal)}</span>
