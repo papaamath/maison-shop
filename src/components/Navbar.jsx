@@ -1,13 +1,14 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useCart } from "../context/CartContext";
+import { useAuth } from "../context/AuthContext";
 import { useState } from "react";
 
 export default function Navbar() {
   const { cart, count } = useCart();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
-
-  const total = cart.reduce((a, i) => a + i.prix * i.qty, 0);
+  const [userMenu, setUserMenu] = useState(false);
 
   return (
     <nav className="bg-white border-b border-gray-100 sticky top-0 z-50 shadow-sm">
@@ -22,20 +23,11 @@ export default function Navbar() {
         <div className="hidden md:flex items-center gap-8 text-sm font-medium text-gray-600">
           <Link to="/" className="hover:text-black transition">Accueil</Link>
           <Link to="/shop" className="hover:text-black transition">Boutique</Link>
-          <Link to="/shop?cat=Vêtements" className="hover:text-black transition">Vêtements</Link>
-          <Link to="/shop?cat=Accessoires" className="hover:text-black transition">Accessoires</Link>
+          <Link to="/suivi" className="hover:text-black transition">Suivi commande</Link>
         </div>
 
         {/* Actions */}
         <div className="flex items-center gap-3">
-          {/* Recherche */}
-          <button
-            onClick={() => navigate("/shop")}
-            className="hidden md:flex items-center gap-2 bg-gray-100 text-gray-500 px-4 py-2 rounded-lg text-sm hover:bg-gray-200 transition"
-          >
-            🔍 Rechercher...
-          </button>
-
           {/* Panier */}
           <button
             onClick={() => navigate("/checkout")}
@@ -50,6 +42,46 @@ export default function Navbar() {
             )}
           </button>
 
+          {/* User menu */}
+          {user ? (
+            <div className="relative">
+              <button
+                onClick={() => setUserMenu(!userMenu)}
+                className="flex items-center gap-2 bg-gray-100 px-3 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 transition"
+              >
+                👤 <span className="hidden sm:inline">{user.displayName?.split(" ")[0] || "Mon compte"}</span>
+              </button>
+              {userMenu && (
+                <div className="absolute right-0 top-12 bg-white border border-gray-200 rounded-xl shadow-lg p-2 min-w-48 z-50">
+                  <p className="px-3 py-2 text-xs text-gray-400 border-b border-gray-100 mb-1">
+                    {user.email}
+                  </p>
+                  <button
+                    onClick={() => { navigate("/suivi"); setUserMenu(false); }}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 rounded-lg transition"
+                  >
+                    📦 Mes commandes
+                  </button>
+                  <button
+                    onClick={() => { logout(); setUserMenu(false); }}
+                    className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition"
+                  >
+                    Déconnexion
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="hidden md:flex items-center gap-2">
+              <Link to="/login" className="text-sm font-medium text-gray-600 hover:text-black transition px-3 py-2">
+                Connexion
+              </Link>
+              <Link to="/register" className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition">
+                S'inscrire
+              </Link>
+            </div>
+          )}
+
           {/* Menu mobile */}
           <button
             onClick={() => setMenuOpen(!menuOpen)}
@@ -60,7 +92,7 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* Menu mobile ouvert */}
+      {/* Menu mobile */}
       {menuOpen && (
         <div className="md:hidden border-t border-gray-100 bg-white px-6 py-4 space-y-3">
           <Link to="/" onClick={() => setMenuOpen(false)} className="block text-sm font-medium text-gray-700 py-2 border-b border-gray-50">
@@ -69,12 +101,26 @@ export default function Navbar() {
           <Link to="/shop" onClick={() => setMenuOpen(false)} className="block text-sm font-medium text-gray-700 py-2 border-b border-gray-50">
             🛍 Boutique
           </Link>
-          <Link to="/shop?cat=Vêtements" onClick={() => setMenuOpen(false)} className="block text-sm font-medium text-gray-700 py-2 border-b border-gray-50">
-            👕 Vêtements
+          <Link to="/suivi" onClick={() => setMenuOpen(false)} className="block text-sm font-medium text-gray-700 py-2 border-b border-gray-50">
+            📦 Suivi commande
           </Link>
-          <Link to="/shop?cat=Accessoires" onClick={() => setMenuOpen(false)} className="block text-sm font-medium text-gray-700 py-2">
-            👜 Accessoires
-          </Link>
+          {user ? (
+            <button
+              onClick={() => { logout(); setMenuOpen(false); }}
+              className="block text-sm font-medium text-red-600 py-2"
+            >
+              Déconnexion
+            </button>
+          ) : (
+            <>
+              <Link to="/login" onClick={() => setMenuOpen(false)} className="block text-sm font-medium text-gray-700 py-2 border-b border-gray-50">
+                Connexion
+              </Link>
+              <Link to="/register" onClick={() => setMenuOpen(false)} className="block text-sm font-medium text-red-600 py-2">
+                S'inscrire
+              </Link>
+            </>
+          )}
         </div>
       )}
     </nav>
