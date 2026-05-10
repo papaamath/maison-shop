@@ -1,17 +1,15 @@
 import { useState } from "react";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "../../firebase/config";
-import { Link, useNavigate, useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
-export default function Login() {
+export default function AdminLogin() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const location = useLocation();
-  const redirect = location.state?.from || "/";
 
   async function handleLogin(e) {
     e.preventDefault();
@@ -19,7 +17,7 @@ export default function Login() {
     setError("");
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      navigate(redirect);
+      navigate("/admin");
     } catch (err) {
       setError("Email ou mot de passe incorrect.");
     }
@@ -27,13 +25,13 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 w-full max-w-md">
+    <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4">
+      <div className="bg-white rounded-2xl p-8 w-full max-w-md">
         <div className="text-center mb-8">
-          <Link to="/" className="font-black text-3xl">
+          <h1 className="font-black text-3xl mb-1">
             MAISON<span className="text-red-600">.</span>
-          </Link>
-          <p className="text-gray-500 text-sm mt-2">Connectez-vous à votre compte</p>
+          </h1>
+          <p className="text-gray-500 text-sm">Espace administrateur</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-4">
@@ -45,7 +43,7 @@ export default function Login() {
               onChange={e => setEmail(e.target.value)}
               required
               className="w-full border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-gray-400"
-              placeholder="mamadou@email.com"
+              placeholder="admin@maison-shop.com"
             />
           </div>
 
@@ -71,7 +69,9 @@ export default function Login() {
           </div>
 
           {error && (
-            <p className="text-red-500 text-sm bg-red-50 px-4 py-2 rounded-lg">{error}</p>
+            <p className="text-red-500 text-sm bg-red-50 px-4 py-2 rounded-lg">
+              {error}
+            </p>
           )}
 
           <button
@@ -82,13 +82,6 @@ export default function Login() {
             {loading ? "Connexion..." : "Se connecter"}
           </button>
         </form>
-
-        <p className="text-center text-sm text-gray-400 mt-6">
-          Pas encore de compte ?{" "}
-          <Link to="/register" className="text-gray-900 font-semibold hover:underline">
-            S'inscrire gratuitement
-          </Link>
-        </p>
       </div>
     </div>
   );
