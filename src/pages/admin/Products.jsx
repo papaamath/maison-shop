@@ -6,7 +6,7 @@ import { formatPrix } from "../../utils/format";
 import ImageUpload from "../../components/ImageUpload";
 
 const CATEGORIES = ["Vêtements", "Accessoires", "Chaussures", "Électronique", "Maison"];
-const FORM_VIDE = { nom: "", prix: "", categorie: "Vêtements", description: "", stock: "", image: "" };
+const FORM_VIDE = { nom: "", prix: "", categorie: "Vêtements", description: "", stock: "", image: "", rupture: false };
 
 export default function AdminProducts() {
   const [produits, setProduits] = useState([]);
@@ -37,8 +37,9 @@ export default function AdminProducts() {
       prix: produit.prix || "",
       categorie: produit.categorie || "Vêtements",
       description: produit.description || "",
-      stock: produit.stock || "",
+      stock: produit.rupture ? "" : (produit.stock || ""),
       image: produit.image || "",
+      rupture: produit.rupture || Number(produit.stock) === 0,
     });
     setShowForm(true);
   }
@@ -51,8 +52,9 @@ export default function AdminProducts() {
       prix: Number(form.prix),
       categorie: form.categorie,
       description: form.description,
-      stock: Number(form.stock),
+      stock: form.rupture ? 0 : Number(form.stock),
       image: form.image,
+      rupture: form.rupture,
     };
     try {
       if (editing) {
@@ -74,10 +76,18 @@ export default function AdminProducts() {
     await chargerProduits();
   }
 
+  async function toggleRupture(produit) {
+    const nouvelleRupture = !produit.rupture && Number(produit.stock) !== 0 ? true : false;
+    await updateDoc(doc(db, "produits", produit.id), {
+      rupture: !produit.rupture,
+      stock: produit.rupture ? (produit.stockAvant || 0) : 0,
+      stockAvant: produit.rupture ? 0 : produit.stock,
+    });
+    await chargerProduits();
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 flex">
-
-      {/* Sidebar */}
       <aside className="w-56 bg-gray-900 min-h-screen flex flex-col fixed left-0 top-0">
         <div className="p-6 border-b border-gray-700">
           <h1 className="font-black text-white text-xl">MAISON<span className="text-red-500">.</span></h1>
@@ -102,7 +112,6 @@ export default function AdminProducts() {
         </nav>
       </aside>
 
-      {/* Contenu */}
       <main className="flex-1 ml-56 p-8">
         <div className="flex items-center justify-between mb-8">
           <div>
@@ -130,9 +139,7 @@ export default function AdminProducts() {
             </div>
 
             {produits.length === 0 ? (
-              <div className="text-center py-16 text-gray-400">
-                Aucun produit. Ajoutez-en un !
-              </div>
+              <div className="text-center py-16 text-gray-400">Aucun produit. Ajoutez-en un !</div>
             ) : (
               produits.map((p, i) => (
                 <div
@@ -152,18 +159,31 @@ export default function AdminProducts() {
                   </div>
                   <span className="col-span-2 text-sm text-gray-500">{p.categorie}</span>
                   <span className="col-span-2 font-semibold text-sm">{formatPrix(Number(p.prix || 0))}</span>
-                  <span className={`col-span-2 text-sm font-medium ${
-                    Number(p.stock) === 0 ? "text-red-500" :
-                    Number(p.stock) <= 5 ? "text-yellow-500" : "text-green-600"
-                  }`}>
-                    {Number(p.stock) === 0 ? "Rupture ⚠️" : `${p.stock} unités`}
-                  </span>
-                  <div className="col-span-2 flex gap-2">
+                  <div className="col-span-2">
+                    {p.rupture || Number(p.stock) === 0 ? (
+                      <span className="text-red-500 text-sm font-bold">Rupture ⚠️</span>
+                    ) : (
+                      <span className={`text-sm font-medium ${Number(p.stock) <= 5 ? "text-yellow-500" : "text-green-600"}`}>
+                        {p.stock} unités
+                      </span>
+                    )}
+                  </div>
+                  <div className="col-span-2 flex gap-2 flex-wrap">
                     <button
                       onClick={() => ouvrirEditForm(p)}
                       className="bg-gray-100 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-200 transition"
                     >
                       Éditer
+                    </button>
+                    <button
+                      onClick={() => toggleRupture(p)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                        p.rupture || Number(p.stock) === 0
+                          ? "bg-green-50 text-green-600 hover:bg-green-100"
+                          : "bg-red-50 text-red-600 hover:bg-red-100"
+                      }`}
+                    >
+                      {p.rupture || Number(p.stock) === 0 ? "Réappro" : "Rupture"}
                     </button>
                     <button
                       onClick={() => handleDelete(p.id)}
@@ -179,14 +199,11 @@ export default function AdminProducts() {
         )}
       </main>
 
-      {/* Modal formulaire */}
       {showForm && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center px-4">
           <div className="bg-white rounded-2xl p-8 w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="font-black text-xl">
-                {editing ? "Modifier le produit" : "Nouveau produit"}
-              </h3>
+              <h3 className="font-black text-xl">{editing ? "Modifier le produit" : "Nouveau produit"}</h3>
               <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-black text-2xl">✕</button>
             </div>
 
@@ -215,15 +232,37 @@ export default function AdminProducts() {
                   />
                 </div>
                 <div>
-                  <label className="text-sm text-gray-500 block mb-1">Stock</label>
+                  <label className="text-sm text-gray-500 block mb-1">
+                    Stock {form.rupture && <span className="text-red-500">(rupture activée)</span>}
+                  </label>
                   <input
                     type="number"
-                    value={form.stock}
+                    value={form.rupture ? "" : form.stock}
                     onChange={e => setForm(f => ({ ...f, stock: e.target.value }))}
-                    required
-                    className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400"
-                    placeholder="10"
+                    disabled={form.rupture}
+                    required={!form.rupture}
+                    className={`w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400 ${form.rupture ? "bg-gray-100 cursor-not-allowed" : ""}`}
+                    placeholder={form.rupture ? "Rupture de stock" : "10"}
                   />
+                </div>
+              </div>
+
+              {/* Option rupture de stock */}
+              <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl p-4">
+                <input
+                  type="checkbox"
+                  id="rupture"
+                  checked={form.rupture}
+                  onChange={e => setForm(f => ({ ...f, rupture: e.target.checked, stock: e.target.checked ? "" : f.stock }))}
+                  className="w-4 h-4 accent-red-600"
+                />
+                <div>
+                  <label htmlFor="rupture" className="text-sm font-bold text-red-700 cursor-pointer">
+                    Mettre en rupture de stock
+                  </label>
+                  <p className="text-xs text-red-500 mt-0.5">
+                    Le produit sera affiché mais ne pourra pas être commandé. Vous pourrez mettre la quantité plus tard.
+                  </p>
                 </div>
               </div>
 
