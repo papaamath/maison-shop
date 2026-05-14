@@ -18,7 +18,7 @@ import Dashboard from "./pages/admin/Dashboard";
 import AdminProducts from "./pages/admin/Products";
 import AdminOrders from "./pages/admin/Orders";
 import AdminPromos from "./pages/admin/Promos";
-
+import Contact from "./pages/Contact";
 export default function App() {
   return (
     <AuthProvider>
@@ -43,6 +43,7 @@ export default function App() {
             <Route path="/admin/products" element={<ProtectedRoute><AdminProducts /></ProtectedRoute>} />
             <Route path="/admin/orders" element={<ProtectedRoute><AdminOrders /></ProtectedRoute>} />
             <Route path="/admin/promos" element={<ProtectedRoute><AdminPromos /></ProtectedRoute>} />
+            <Route path="/contact" element={<Contact />} />
           </Routes>
         </BrowserRouter>
       </CartProvider>
