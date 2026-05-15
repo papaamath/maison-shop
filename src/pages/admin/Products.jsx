@@ -5,8 +5,18 @@ import { Link } from "react-router-dom";
 import { formatPrix } from "../../utils/format";
 import ImageUpload from "../../components/ImageUpload";
 
-const CATEGORIES = ["Vêtements", "Accessoires", "Chaussures", "Électronique", "Maison"];
-const FORM_VIDE = { nom: "", prix: "", categorie: "Vêtements", description: "", stock: "", image: "", rupture: false };
+const CATEGORIES = [
+  "Sport",
+  "High-Tech",
+  "Electricite",
+  "Montres",
+  "Sacs",
+  "Toilettes",
+  "Papeterie",
+  "Accessoires",
+];
+
+const FORM_VIDE = { nom: "", prix: "", categorie: "Sport", description: "", stock: "", image: "", rupture: false };
 
 export default function AdminProducts() {
   const [produits, setProduits] = useState([]);
@@ -35,7 +45,7 @@ export default function AdminProducts() {
     setForm({
       nom: produit.nom || "",
       prix: produit.prix || "",
-      categorie: produit.categorie || "Vêtements",
+      categorie: produit.categorie || "Sport",
       description: produit.description || "",
       stock: produit.rupture ? "" : (produit.stock || ""),
       image: produit.image || "",
@@ -77,7 +87,6 @@ export default function AdminProducts() {
   }
 
   async function toggleRupture(produit) {
-    const nouvelleRupture = !produit.rupture && Number(produit.stock) !== 0 ? true : false;
     await updateDoc(doc(db, "produits", produit.id), {
       rupture: !produit.rupture,
       stock: produit.rupture ? (produit.stockAvant || 0) : 0,
@@ -95,19 +104,19 @@ export default function AdminProducts() {
         </div>
         <nav className="p-4 flex-1 space-y-1">
           <Link to="/admin" className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-400 hover:bg-gray-700 hover:text-white text-sm transition">
-            📊 Dashboard
+            Dashboard
           </Link>
           <Link to="/admin/products" className="flex items-center gap-3 px-3 py-2 rounded-lg bg-gray-700 text-white text-sm font-medium">
-            📦 Produits
+            Produits
           </Link>
           <Link to="/admin/orders" className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-400 hover:bg-gray-700 hover:text-white text-sm transition">
-            🛒 Commandes
+            Commandes
           </Link>
           <Link to="/admin/promos" className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-400 hover:bg-gray-700 hover:text-white text-sm transition">
-            🎟️ Promotions
+            Promotions
           </Link>
           <Link to="/shop" className="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-400 hover:bg-gray-700 hover:text-white text-sm transition">
-            🌐 Voir la boutique
+            Voir la boutique
           </Link>
         </nav>
       </aside>
@@ -118,10 +127,8 @@ export default function AdminProducts() {
             <h2 className="font-black text-2xl">Produits</h2>
             <p className="text-gray-400 text-sm mt-1">{produits.length} produit(s) au total</p>
           </div>
-          <button
-            onClick={ouvrirNouveauForm}
-            className="bg-gray-900 text-white px-5 py-2.5 rounded-lg font-medium hover:bg-gray-700 transition"
-          >
+          <button onClick={ouvrirNouveauForm}
+            className="bg-gray-900 text-white px-5 py-2.5 rounded-lg font-medium hover:bg-gray-700 transition">
             + Nouveau produit
           </button>
         </div>
@@ -132,7 +139,7 @@ export default function AdminProducts() {
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
             <div className="grid grid-cols-12 px-6 py-3 bg-gray-50 border-b border-gray-200 text-xs text-gray-400 font-semibold uppercase tracking-wide">
               <span className="col-span-4">Produit</span>
-              <span className="col-span-2">Catégorie</span>
+              <span className="col-span-2">Categorie</span>
               <span className="col-span-2">Prix</span>
               <span className="col-span-2">Stock</span>
               <span className="col-span-2">Actions</span>
@@ -142,15 +149,15 @@ export default function AdminProducts() {
               <div className="text-center py-16 text-gray-400">Aucun produit. Ajoutez-en un !</div>
             ) : (
               produits.map((p, i) => (
-                <div
-                  key={p.id}
-                  className={`grid grid-cols-12 px-6 py-4 items-center ${i < produits.length - 1 ? "border-b border-gray-100" : ""}`}
-                >
+                <div key={p.id}
+                  className={`grid grid-cols-12 px-6 py-4 items-center ${i < produits.length - 1 ? "border-b border-gray-100" : ""}`}>
                   <div className="col-span-4 flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-lg flex-shrink-0 overflow-hidden">
+                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden">
                       {p.image ? (
                         <img src={p.image} alt={p.nom} className="w-full h-full object-cover" />
-                      ) : "📦"}
+                      ) : (
+                        <span className="text-gray-300 text-xs">Photo</span>
+                      )}
                     </div>
                     <div>
                       <p className="font-medium text-sm">{p.nom}</p>
@@ -161,34 +168,28 @@ export default function AdminProducts() {
                   <span className="col-span-2 font-semibold text-sm">{formatPrix(Number(p.prix || 0))}</span>
                   <div className="col-span-2">
                     {p.rupture || Number(p.stock) === 0 ? (
-                      <span className="text-red-500 text-sm font-bold">Rupture ⚠️</span>
+                      <span className="text-red-500 text-sm font-bold">Rupture</span>
                     ) : (
-                      <span className={`text-sm font-medium ${Number(p.stock) <= 5 ? "text-yellow-500" : "text-green-600"}`}>
-                        {p.stock} unités
+                      <span className={`text-sm font-medium ${Number(p.stock) <= 5 ? "text-orange-500" : "text-green-600"}`}>
+                        {p.stock} unites
                       </span>
                     )}
                   </div>
                   <div className="col-span-2 flex gap-2 flex-wrap">
-                    <button
-                      onClick={() => ouvrirEditForm(p)}
-                      className="bg-gray-100 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-200 transition"
-                    >
-                      Éditer
+                    <button onClick={() => ouvrirEditForm(p)}
+                      className="bg-gray-100 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-200 transition">
+                      Editer
                     </button>
-                    <button
-                      onClick={() => toggleRupture(p)}
+                    <button onClick={() => toggleRupture(p)}
                       className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
                         p.rupture || Number(p.stock) === 0
                           ? "bg-green-50 text-green-600 hover:bg-green-100"
                           : "bg-red-50 text-red-600 hover:bg-red-100"
-                      }`}
-                    >
-                      {p.rupture || Number(p.stock) === 0 ? "Réappro" : "Rupture"}
+                      }`}>
+                      {p.rupture || Number(p.stock) === 0 ? "Reappro" : "Rupture"}
                     </button>
-                    <button
-                      onClick={() => handleDelete(p.id)}
-                      className="bg-red-50 text-red-600 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-red-100 transition"
-                    >
+                    <button onClick={() => handleDelete(p.id)}
+                      className="bg-red-50 text-red-600 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-red-100 transition">
                       Suppr.
                     </button>
                   </div>
@@ -204,108 +205,75 @@ export default function AdminProducts() {
           <div className="bg-white rounded-2xl p-8 w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <h3 className="font-black text-xl">{editing ? "Modifier le produit" : "Nouveau produit"}</h3>
-              <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-black text-2xl">✕</button>
+              <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-black text-2xl">X</button>
             </div>
 
             <form onSubmit={handleSave} className="space-y-4">
               <div>
                 <label className="text-sm text-gray-500 block mb-1">Nom du produit</label>
-                <input
-                  value={form.nom}
-                  onChange={e => setForm(f => ({ ...f, nom: e.target.value }))}
-                  required
+                <input value={form.nom} onChange={e => setForm(f => ({ ...f, nom: e.target.value }))} required
                   className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400"
-                  placeholder="Ex: Boubou Brodé"
-                />
+                  placeholder="Ex: Ballon de football" />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm text-gray-500 block mb-1">Prix (FCFA)</label>
-                  <input
-                    type="number"
-                    value={form.prix}
-                    onChange={e => setForm(f => ({ ...f, prix: e.target.value }))}
-                    required
+                  <input type="number" value={form.prix} onChange={e => setForm(f => ({ ...f, prix: e.target.value }))} required
                     className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400"
-                    placeholder="25000"
-                  />
+                    placeholder="25000" />
                 </div>
                 <div>
                   <label className="text-sm text-gray-500 block mb-1">
-                    Stock {form.rupture && <span className="text-red-500">(rupture activée)</span>}
+                    Stock {form.rupture && <span className="text-red-500">(rupture)</span>}
                   </label>
-                  <input
-                    type="number"
-                    value={form.rupture ? "" : form.stock}
+                  <input type="number" value={form.rupture ? "" : form.stock}
                     onChange={e => setForm(f => ({ ...f, stock: e.target.value }))}
-                    disabled={form.rupture}
-                    required={!form.rupture}
+                    disabled={form.rupture} required={!form.rupture}
                     className={`w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400 ${form.rupture ? "bg-gray-100 cursor-not-allowed" : ""}`}
-                    placeholder={form.rupture ? "Rupture de stock" : "10"}
-                  />
+                    placeholder={form.rupture ? "Rupture activee" : "10"} />
                 </div>
               </div>
 
-              {/* Option rupture de stock */}
-              <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl p-4">
-                <input
-                  type="checkbox"
-                  id="rupture"
-                  checked={form.rupture}
+              <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl p-4">
+                <input type="checkbox" id="rupture" checked={form.rupture}
                   onChange={e => setForm(f => ({ ...f, rupture: e.target.checked, stock: e.target.checked ? "" : f.stock }))}
-                  className="w-4 h-4 accent-red-600"
-                />
+                  className="w-4 h-4 mt-0.5 accent-red-600" />
                 <div>
                   <label htmlFor="rupture" className="text-sm font-bold text-red-700 cursor-pointer">
                     Mettre en rupture de stock
                   </label>
                   <p className="text-xs text-red-500 mt-0.5">
-                    Le produit sera affiché mais ne pourra pas être commandé. Vous pourrez mettre la quantité plus tard.
+                    Le produit sera visible mais ne pourra pas etre commande. Vous pourrez ajouter le stock plus tard.
                   </p>
                 </div>
               </div>
 
               <div>
-                <label className="text-sm text-gray-500 block mb-1">Catégorie</label>
-                <select
-                  value={form.categorie}
-                  onChange={e => setForm(f => ({ ...f, categorie: e.target.value }))}
-                  className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400 bg-white"
-                >
+                <label className="text-sm text-gray-500 block mb-1">Categorie</label>
+                <select value={form.categorie} onChange={e => setForm(f => ({ ...f, categorie: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400 bg-white">
                   {CATEGORIES.map(c => <option key={c}>{c}</option>)}
                 </select>
               </div>
 
               <div>
                 <label className="text-sm text-gray-500 block mb-1">Description</label>
-                <textarea
-                  value={form.description}
-                  onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
                   rows={3}
                   className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400 resize-none"
-                  placeholder="Description du produit..."
-                />
+                  placeholder="Description du produit..." />
               </div>
 
-              <ImageUpload
-                onUpload={url => setForm(f => ({ ...f, image: url }))}
-                imageActuelle={form.image}
-              />
+              <ImageUpload onUpload={url => setForm(f => ({ ...f, image: url }))} imageActuelle={form.image} />
 
               <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowForm(false)}
-                  className="flex-1 border border-gray-200 text-gray-600 py-3 rounded-lg font-medium hover:bg-gray-50 transition"
-                >
+                <button type="button" onClick={() => setShowForm(false)}
+                  className="flex-1 border border-gray-200 text-gray-600 py-3 rounded-lg font-medium hover:bg-gray-50 transition">
                   Annuler
                 </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="flex-1 bg-gray-900 text-white py-3 rounded-lg font-medium hover:bg-gray-700 transition disabled:opacity-50"
-                >
+                <button type="submit" disabled={saving}
+                  className="flex-1 bg-gray-900 text-white py-3 rounded-lg font-medium hover:bg-gray-700 transition disabled:opacity-50">
                   {saving ? "Sauvegarde..." : "Enregistrer"}
                 </button>
               </div>

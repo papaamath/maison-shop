@@ -27,7 +27,7 @@ export default function Home() {
           rupture: p.rupture || false,
         };
       });
-      setProduits(data.slice(0, 4));
+      setProduits(data.slice(0, 8));
     }
     charger();
   }, []);
@@ -39,6 +39,17 @@ export default function Home() {
     setTimeout(() => setToast(null), 2000);
   }
 
+  const categories = [
+    { nom: "Sport", desc: "Ballons, crampons, equipements", color: "bg-green-50 border-green-200 text-green-700" },
+    { nom: "High-Tech",  desc: "Gaming, casques, claviers", color: "bg-blue-50 border-blue-200 text-blue-700" },
+    { nom: "Electricite", desc:"Power bank, aspirateurs", color: "bg-yellow-50 border-yellow-200 text-yellow-700" },
+    { nom: "Montres", desc: "Montres hommes et femmes", color: "bg-purple-50 border-purple-200 text-purple-700" },
+    { nom: "Sacs", desc: "Sacs a dos, sacs de sport", color: "bg-orange-50 border-orange-200 text-orange-700" },
+    { nom: "Toilettes",desc: "Tondeuses, soins personnels", color: "bg-pink-50 border-pink-200 text-pink-700" },
+    { nom: "Papeterie",  desc: "Bics, fournitures", color: "bg-red-50 border-red-200 text-red-700" },
+    { nom: "Accessoires", desc: "Divers accessoires", color: "bg-gray-50 border-gray-200 text-gray-700" },
+  ];
+
   return (
     <div className="min-h-screen bg-white">
       <Navbar />
@@ -48,16 +59,16 @@ export default function Home() {
         <div className="absolute inset-0 bg-gradient-to-br from-gray-900 via-gray-800 to-red-900 opacity-90" />
         <div className="relative max-w-6xl mx-auto px-6 py-16 md:py-24 flex flex-col md:flex-row items-center gap-12">
           <div className="flex-1 text-center md:text-left">
-            <span className="inline-block bg-red-600 text-white text-xs font-bold px-3 py-1 rounded-full uppercase tracking-widest mb-6">
+            <div className="inline-block bg-red-600 text-white text-xs font-bold px-3 py-1 rounded-full uppercase tracking-widest mb-6">
               Nouvelle collection
-            </span>
+            </div>
             <h1 className="font-black text-4xl md:text-6xl text-white leading-tight mb-6">
               Tout ce dont<br/>
               <span className="text-red-400">vous avez besoin</span><br/>
               en un clic.
             </h1>
             <p className="text-gray-300 text-lg mb-8 max-w-md mx-auto md:mx-0">
-              Vetements, accessoires, electronique et plus encore. Livraison rapide partout au Senegal.
+              Sport, High-Tech, Beaute et plus encore. Livraison rapide partout au Senegal.
             </p>
             <div className="flex flex-wrap gap-4 justify-center md:justify-start">
               <button onClick={() => navigate("/shop")}
@@ -88,18 +99,18 @@ export default function Home() {
 
       {/* Avantages */}
       <div className="bg-gray-50 border-b border-gray-100">
-        <div className="max-w-6xl mx-auto px-6 py-8 grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="max-w-6xl mx-auto px-6 py-6 grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
             { icon: "🚚", title: "Livraison rapide", desc: "24-48h a Dakar" },
             { icon: "💳", title: "Paiement flexible", desc: "Wave, Orange Money" },
             { icon: "↩️", title: "Retours faciles", desc: "30 jours offerts" },
             { icon: "🔒", title: "100% securise", desc: "Paiement a la livraison" },
           ].map(a => (
-            <div key={a.title} className="flex items-center gap-3 p-4 bg-white rounded-xl border border-gray-100">
-              <span className="text-3xl">{a.icon}</span>
+            <div key={a.title} className="flex items-center gap-3 p-3 md:p-4 bg-white rounded-xl border border-gray-100">
+              <span className="text-2xl">{a.icon}</span>
               <div>
-                <p className="font-bold text-sm">{a.title}</p>
-                <p className="text-gray-400 text-xs">{a.desc}</p>
+                <p className="font-bold text-xs md:text-sm">{a.title}</p>
+                <p className="text-gray-400 text-xs hidden md:block">{a.desc}</p>
               </div>
             </div>
           ))}
@@ -113,16 +124,12 @@ export default function Home() {
           <p className="text-gray-400">Trouvez exactement ce que vous cherchez</p>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[
-            { nom: "Vetements", icon: "👕", color: "bg-blue-50 hover:bg-blue-100" },
-            { nom: "Chaussures", icon: "👟", color: "bg-green-50 hover:bg-green-100" },
-            { nom: "Accessoires", icon: "👜", color: "bg-yellow-50 hover:bg-yellow-100" },
-            { nom: "Maison", icon: "🏠", color: "bg-red-50 hover:bg-red-100" },
-          ].map(cat => (
+          {categories.map(cat => (
             <button key={cat.nom} onClick={() => navigate(`/shop?cat=${cat.nom}`)}
-              className={`${cat.color} rounded-2xl p-6 text-center transition cursor-pointer border border-transparent hover:border-gray-200`}>
-              <p className="text-4xl mb-3">{cat.icon}</p>
-              <p className="font-bold text-gray-800">{cat.nom}</p>
+              className={`${cat.color} border rounded-2xl p-5 text-left transition hover:shadow-md hover:-translate-y-0.5`}>
+              <p className="text-3xl mb-3">{cat.icon}</p>
+              <p className="font-bold text-sm md:text-base">{cat.nom}</p>
+              <p className="text-xs mt-1 opacity-70 hidden md:block">{cat.desc}</p>
             </button>
           ))}
         </div>
@@ -132,37 +139,39 @@ export default function Home() {
       {produits.length > 0 && (
         <div className="bg-gray-50 py-16">
           <div className="max-w-6xl mx-auto px-6">
-            <div className="flex items-center justify-between mb-10">
+            <div className="flex items-center justify-between mb-8">
               <div>
-                <h2 className="font-black text-3xl mb-1">Produits vedettes</h2>
-                <p className="text-gray-400">Nos meilleures ventes du moment</p>
+                <h2 className="font-black text-2xl md:text-3xl mb-1">Produits vedettes</h2>
+                <p className="text-gray-400 text-sm">Nos meilleures ventes du moment</p>
               </div>
               <button onClick={() => navigate("/shop")}
-                className="text-red-600 font-semibold hover:text-red-700 transition">
+                className="text-red-600 font-semibold hover:text-red-700 transition text-sm">
                 Voir tout
               </button>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {produits.map(produit => (
                 <div key={produit.id} onClick={() => navigate(`/product/${produit.id}`)}
-                  className="bg-white rounded-2xl border border-gray-100 overflow-hidden hover:-translate-y-1 transition-transform duration-200 cursor-pointer shadow-sm hover:shadow-md">
-                  <div className="h-36 md:h-48 bg-gray-100 overflow-hidden">
+                  className="bg-white rounded-xl border border-gray-100 overflow-hidden hover:-translate-y-1 transition-transform duration-200 cursor-pointer shadow-sm hover:shadow-md">
+                  <div className="h-36 md:h-44 bg-gray-100 overflow-hidden">
                     {produit.image ? (
                       <img src={produit.image} alt={produit.nom}
                         className="w-full h-full object-cover hover:scale-105 transition-transform duration-300" />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-5xl">📦</div>
+                      <div className="w-full h-full flex items-center justify-center text-4xl bg-gray-50 text-gray-300">
+                        Aucune image
+                      </div>
                     )}
                   </div>
-                  <div className="p-3 md:p-4">
-                    <p className="text-xs text-gray-400 mb-1">{produit.categorie}</p>
-                    <h3 className="font-bold text-sm md:text-base mb-2 line-clamp-1">{produit.nom}</h3>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-black text-sm md:text-lg text-red-600">{formatPrix(produit.prix)}</span>
+                  <div className="p-3">
+                    <p className="text-xs text-gray-400 mb-0.5">{produit.categorie}</p>
+                    <h3 className="font-bold text-sm mb-2 line-clamp-1">{produit.nom}</h3>
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="font-black text-sm text-red-600">{formatPrix(produit.prix)}</span>
                       <button onClick={e => handleAjout(e, produit)}
                         disabled={produit.rupture || produit.stock === 0}
-                        className="bg-gray-900 text-white px-2 md:px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-700 transition disabled:opacity-40">
-                        + Panier
+                        className="bg-gray-900 text-white px-2 py-1 rounded-lg text-xs font-medium hover:bg-gray-700 transition disabled:opacity-40 disabled:cursor-not-allowed">
+                        {produit.rupture || produit.stock === 0 ? "Indispo" : "+ Panier"}
                       </button>
                     </div>
                   </div>
@@ -174,7 +183,7 @@ export default function Home() {
       )}
 
       {/* Banner promo */}
-      <div className="bg-red-600 text-white py-16 px-6 text-center">
+      <div className="bg-red-600 text-white py-14 px-6 text-center">
         <h2 className="font-black text-3xl md:text-4xl mb-4">Livraison gratuite</h2>
         <p className="text-red-100 text-lg mb-8 max-w-md mx-auto">
           Pour toute commande superieure a 50 000 FCFA
@@ -185,7 +194,7 @@ export default function Home() {
         </button>
       </div>
 
-      {/* Bande WhatsApp */}
+      {/* WhatsApp */}
       <div className="bg-green-600 py-12 px-6">
         <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="text-center md:text-left">
@@ -266,7 +275,7 @@ export default function Home() {
 
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-xl text-sm font-medium z-50 shadow-lg">
-          {toast} ajouté au panier
+          {toast} ajoute au panier
         </div>
       )}
     </div>
