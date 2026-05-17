@@ -59,6 +59,7 @@ export default function AdminProducts() {
     { to: "/admin/products", label: "Produits", active: true },
     { to: "/admin/orders", label: "Commandes" },
     { to: "/admin/promos", label: "Promotions" },
+    { to: "/admin/caisse", label: "Caisse" },
     { to: "/shop", label: "Voir la boutique" },
   ];
 

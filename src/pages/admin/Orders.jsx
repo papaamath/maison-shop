@@ -76,6 +76,7 @@ export default function AdminOrders() {
     { to: "/admin/products", label: "Produits" },
     { to: "/admin/orders", label: "Commandes", active: true },
     { to: "/admin/promos", label: "Promotions" },
+    { to: "/admin/caisse", label: "Caisse" },
     { to: "/shop", label: "Voir la boutique" },
   ];
 
