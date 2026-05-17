@@ -14,20 +14,23 @@ const COLORS = ["#1a1a18", "#C84B31", "#3B6D11", "#BA7517", "#5DCAA5"];
 export default function Dashboard() {
   const [commandes, setCommandes] = useState([]);
   const [produits, setProduits] = useState([]);
+  const [nbClients, setNbClients] = useState(0);
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
     async function charger() {
-      const [cmdSnap, prodSnap] = await Promise.all([
+      const [cmdSnap, prodSnap, clientsSnap] = await Promise.all([
         getDocs(collection(db, "commandes")),
         getDocs(collection(db, "produits")),
+        getDocs(collection(db, "clients")),
       ]);
       const cmds = cmdSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       cmds.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
       setCommandes(cmds);
       setProduits(prodSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setNbClients(clientsSnap.size);
       setLoading(false);
     }
     charger();
@@ -69,6 +72,15 @@ export default function Dashboard() {
   const ruptures = produits.filter(p => Number(p.stock || 0) === 0);
   const stockFaible = produits.filter(p => { const s = Number(p.stock || 0); return s > 0 && s <= 5; });
 
+  // Nouveaux clients par jour
+  const clientsParJour = {};
+  commandes.forEach(cmd => {
+    if (!cmd.createdAt?.seconds) return;
+    const date = new Date(cmd.createdAt.seconds * 1000).toLocaleDateString("fr-SN", { day: "2-digit", month: "short" });
+    clientsParJour[date] = (clientsParJour[date] || 0) + 1;
+  });
+  const dataClients = Object.entries(clientsParJour).map(([date, total]) => ({ date, total }));
+
   const STATUS_COLORS = {
     "En attente": "bg-yellow-100 text-yellow-700",
     "Confirme": "bg-blue-100 text-blue-700",
@@ -79,10 +91,10 @@ export default function Dashboard() {
 
   const navLinks = [
     { to: "/admin", label: "Dashboard", active: true },
-    { to: "/admin/products", label: "Produits", active: false },
-    { to: "/admin/orders", label: "Commandes", active: false },
-    { to: "/admin/promos", label: "Promotions", active: false },
-    { to: "/shop", label: "Voir la boutique", active: false },
+    { to: "/admin/products", label: "Produits" },
+    { to: "/admin/orders", label: "Commandes" },
+    { to: "/admin/promos", label: "Promotions" },
+    { to: "/shop", label: "Voir la boutique" },
   ];
 
   return (
@@ -96,7 +108,6 @@ export default function Dashboard() {
         </button>
       </div>
 
-      {/* Menu mobile */}
       {menuOpen && (
         <div className="md:hidden bg-gray-800 px-4 py-3 space-y-2 sticky top-12 z-40">
           {navLinks.map(l => (
@@ -144,22 +155,23 @@ export default function Dashboard() {
             <div className="text-gray-400">Chargement...</div>
           ) : (
             <>
-              {/* KPIs */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+              {/* KPIs — 5 cartes dont clients */}
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
                 {[
-                  { label: "Chiffre d'affaires", value: formatPrix(ca), color: "text-green-600" },
-                  { label: "Commandes totales", value: commandes.length, color: "" },
-                  { label: "En attente", value: enAttente, color: enAttente > 0 ? "text-yellow-600" : "" },
-                  { label: "Taux livraison", value: tauxConversion + "%", color: "text-blue-600" },
+                  { label: "Chiffre d'affaires", value: formatPrix(ca), color: "text-green-600", border: "" },
+                  { label: "Commandes totales", value: commandes.length, color: "", border: "" },
+                  { label: "En attente", value: enAttente, color: enAttente > 0 ? "text-yellow-600" : "", border: enAttente > 0 ? "border-yellow-300" : "" },
+                  { label: "Taux livraison", value: tauxConversion + "%", color: "text-blue-600", border: "" },
+                  { label: "Clients inscrits", value: nbClients, color: "text-purple-600", border: "border-purple-200" },
                 ].map(s => (
-                  <div key={s.label} className="bg-white rounded-xl border border-gray-200 p-4">
+                  <div key={s.label} className={`bg-white rounded-xl border p-4 ${s.border || "border-gray-200"}`}>
                     <p className="text-gray-400 text-xs mb-1">{s.label}</p>
                     <p className={`font-black text-xl md:text-2xl ${s.color}`}>{s.value}</p>
                   </div>
                 ))}
               </div>
 
-              {/* Alertes */}
+              {/* Alertes stock */}
               {(ruptures.length > 0 || stockFaible.length > 0) && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                   {ruptures.length > 0 && (
@@ -183,8 +195,10 @@ export default function Dashboard() {
 
               {/* Graphiques */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+
+                {/* Evolution CA */}
                 <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-6">
-                  <h3 className="font-bold text-base md:text-lg mb-4">Evolution du CA</h3>
+                  <h3 className="font-bold text-base mb-4">Evolution du CA</h3>
                   {dataCA.length === 0 ? (
                     <p className="text-gray-400 text-sm text-center py-8">Pas encore de donnees</p>
                   ) : (
@@ -192,7 +206,7 @@ export default function Dashboard() {
                       <LineChart data={dataCA}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                         <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                        <YAxis tick={{ fontSize: 10 }} tickFormatter={v => (v/1000).toFixed(0) + "k"} />
+                        <YAxis tick={{ fontSize: 10 }} tickFormatter={v => (v / 1000).toFixed(0) + "k"} />
                         <Tooltip formatter={v => formatPrix(v)} />
                         <Line type="monotone" dataKey="total" stroke="#C84B31" strokeWidth={2} dot={{ fill: "#C84B31" }} />
                       </LineChart>
@@ -200,8 +214,9 @@ export default function Dashboard() {
                   )}
                 </div>
 
+                {/* Repartition commandes */}
                 <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-6">
-                  <h3 className="font-bold text-base md:text-lg mb-4">Repartition commandes</h3>
+                  <h3 className="font-bold text-base mb-4">Repartition commandes</h3>
                   {dataStatuts.length === 0 ? (
                     <p className="text-gray-400 text-sm text-center py-8">Pas encore de donnees</p>
                   ) : (
@@ -227,8 +242,9 @@ export default function Dashboard() {
                   )}
                 </div>
 
+                {/* Top produits */}
                 <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-6">
-                  <h3 className="font-bold text-base md:text-lg mb-4">Top produits vendus</h3>
+                  <h3 className="font-bold text-base mb-4">Top produits vendus</h3>
                   {topProduits.length === 0 ? (
                     <p className="text-gray-400 text-sm text-center py-8">Pas encore de ventes</p>
                   ) : (
@@ -244,32 +260,65 @@ export default function Dashboard() {
                   )}
                 </div>
 
-                <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-6">
+                {/* Inscriptions clients */}
+                <div className="bg-white rounded-xl border border-purple-200 p-4 md:p-6">
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-bold text-base md:text-lg">Dernieres commandes</h3>
-                    <Link to="/admin/orders" className="text-sm text-gray-400 hover:text-black transition">Voir tout</Link>
+                    <h3 className="font-bold text-base">Clients inscrits</h3>
+                    <span className="bg-purple-100 text-purple-700 text-xs font-bold px-3 py-1 rounded-full">
+                      {nbClients} total
+                    </span>
                   </div>
-                  {commandes.length === 0 ? (
-                    <p className="text-gray-400 text-sm text-center py-8">Aucune commande</p>
+                  {dataClients.length === 0 ? (
+                    <p className="text-gray-400 text-sm text-center py-8">Pas encore de donnees</p>
                   ) : (
-                    <div className="space-y-3">
-                      {[...commandes].reverse().slice(0, 4).map(cmd => (
-                        <div key={cmd.id} className="flex items-center justify-between py-2 border-b border-gray-50">
-                          <div>
-                            <p className="font-medium text-sm">{cmd.client?.prenom} {cmd.client?.nom}</p>
-                            <p className="text-gray-400 text-xs">{cmd.articles?.length} article(s)</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-bold text-sm">{formatPrix(cmd.total)}</p>
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[cmd.statut] || "bg-gray-100"}`}>
-                              {cmd.statut}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    <ResponsiveContainer width="100%" height={180}>
+                      <BarChart data={dataClients}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                        <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
+                        <Tooltip />
+                        <Bar dataKey="total" fill="#7C3AED" radius={[4, 4, 0, 0]} name="Commandes" />
+                      </BarChart>
+                    </ResponsiveContainer>
                   )}
+
+                  {/* Liste derniers clients */}
+                  <div className="mt-4 pt-4 border-t border-gray-100">
+                    <p className="text-xs text-gray-400 mb-3 uppercase tracking-wide">Derniers inscrits</p>
+                    <Link to="/admin/clients" className="text-xs text-purple-600 hover:underline float-right -mt-6">
+                      Voir tous
+                    </Link>
+                  </div>
                 </div>
+
+              </div>
+
+              {/* Dernieres commandes */}
+              <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-base">Dernieres commandes</h3>
+                  <Link to="/admin/orders" className="text-sm text-gray-400 hover:text-black transition">Voir tout</Link>
+                </div>
+                {commandes.length === 0 ? (
+                  <p className="text-gray-400 text-sm text-center py-8">Aucune commande</p>
+                ) : (
+                  <div className="space-y-3">
+                    {[...commandes].reverse().slice(0, 5).map(cmd => (
+                      <div key={cmd.id} className="flex items-center justify-between py-2 border-b border-gray-50">
+                        <div>
+                          <p className="font-medium text-sm">{cmd.client?.prenom} {cmd.client?.nom}</p>
+                          <p className="text-gray-400 text-xs">{cmd.articles?.length} article(s)</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold text-sm">{formatPrix(cmd.total)}</p>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[cmd.statut] || "bg-gray-100"}`}>
+                            {cmd.statut}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </>
           )}
