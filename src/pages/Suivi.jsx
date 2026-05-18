@@ -4,7 +4,7 @@ import { db } from "../firebase/config";
 import Navbar from "../components/Navbar";
 import { formatPrix } from "../utils/format";
 import { jsPDF } from "jspdf";
-import "jspdf-autotable";
+import autoTable from "jspdf-autotable";
 
 const STATUS_STEPS = ["En attente", "Confirme", "En livraison", "Livre"];
 
@@ -17,10 +17,27 @@ const STATUS_COLORS = {
 };
 
 function formatDate(ts) {
-  if (!ts?.seconds) return "—";
+  if (!ts?.seconds) return "-";
   return new Date(ts.seconds * 1000).toLocaleDateString("fr-SN", {
     day: "2-digit", month: "long", year: "numeric"
   });
+}
+
+// Remplace les caracteres speciaux pour jsPDF
+function clean(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/é/g, "e").replace(/è/g, "e").replace(/ê/g, "e").replace(/ë/g, "e")
+    .replace(/à/g, "a").replace(/â/g, "a").replace(/ä/g, "a")
+    .replace(/ù/g, "u").replace(/û/g, "u").replace(/ü/g, "u")
+    .replace(/î/g, "i").replace(/ï/g, "i")
+    .replace(/ô/g, "o").replace(/ö/g, "o")
+    .replace(/ç/g, "c")
+    .replace(/É/g, "E").replace(/È/g, "E").replace(/Ê/g, "E")
+    .replace(/À/g, "A").replace(/Â/g, "A")
+    .replace(/Ù/g, "U").replace(/Û/g, "U")
+    .replace(/Î/g, "I").replace(/Ô/g, "O")
+    .replace(/Ç/g, "C");
 }
 
 async function genererFacturePDF(cmd) {
@@ -31,12 +48,13 @@ async function genererFacturePDF(cmd) {
   const rouge = [200, 75, 49];
   const gris = [107, 107, 101];
   const grisClair = [245, 244, 240];
+  const vert = [59, 109, 17];
 
-  // Header avec logo
+  // Header fond sombre
   doc.setFillColor(...noir);
   doc.rect(0, 0, 210, 50, "F");
 
-  // Charger le logo depuis Cloudinary
+  // Logo
   try {
     const logoUrl = "https://res.cloudinary.com/dy2tgofmf/image/upload/logo_k9rogt";
     const img = new Image();
@@ -53,9 +71,7 @@ async function genererFacturePDF(cmd) {
     ctx.drawImage(img, 0, 0);
     const imgData = canvas.toDataURL("image/jpeg");
     doc.addImage(imgData, "JPEG", 12, 8, 30, 30);
-  } catch {
-    // Si logo ne charge pas, affiche juste le texte
-  }
+  } catch {}
 
   // Nom boutique
   doc.setTextColor(255, 255, 255);
@@ -67,16 +83,16 @@ async function genererFacturePDF(cmd) {
   doc.text("Mbed Fass Yeumbeul, Dakar, Senegal", 48, 30);
   doc.text("+221 76 873 07 31  |  syllaissa875@gmail.com", 48, 37);
 
-  // FACTURE titre
+  // FACTURE
   doc.setFont("helvetica", "bold");
   doc.setFontSize(20);
   doc.text("FACTURE", 195, 20, { align: "right" });
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
-  doc.text(`Date : ${date}`, 195, 29, { align: "right" });
+  doc.text(`Date : ${clean(date)}`, 195, 29, { align: "right" });
 
   // Badge LIVREE
-  doc.setFillColor(59, 109, 17);
+  doc.setFillColor(...vert);
   doc.roundedRect(155, 34, 40, 9, 2, 2, "F");
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(8);
@@ -95,30 +111,43 @@ async function genererFacturePDF(cmd) {
   doc.setTextColor(...noir);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
-  doc.text(`${cmd.client?.prenom || ""} ${cmd.client?.nom || ""}`, 15, 73);
+  doc.text(clean(`${cmd.client?.prenom || ""} ${cmd.client?.nom || ""}`), 15, 73);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   doc.setTextColor(...gris);
-  doc.text(`Email : ${cmd.client?.email || ""}`, 15, 79);
-  doc.text(`Tel : ${cmd.client?.telephone || ""}`, 15, 84);
-  const adresse = cmd.modeLivraison === "retrait" ? "Retrait en magasin" : `${cmd.client?.adresse || ""}, ${cmd.client?.ville || ""}`;
-  doc.text(`Adresse : ${adresse}`, 110, 79);
+  doc.text(`Email : ${clean(cmd.client?.email || "")}`, 15, 79);
+  doc.text(`Tel : ${clean(cmd.client?.telephone || "")}`, 15, 84);
+
+  const adresse = cmd.modeLivraison === "retrait"
+    ? "Retrait en magasin"
+    : `${cmd.client?.adresse || ""}, ${cmd.client?.ville || ""}`;
+  doc.text(`Adresse : ${clean(adresse)}`, 110, 79);
 
   // Tableau articles
   const lignes = (cmd.articles || []).map(a => [
-    a.nom,
-    a.quantite.toString(),
+    clean(a.nom),
+    String(a.quantite),
     `${Number(a.prix).toLocaleString("fr-SN")} FCFA`,
     `${Number(a.prix * a.quantite).toLocaleString("fr-SN")} FCFA`,
   ]);
 
-  doc.autoTable({
+  autoTable(doc, {
     startY: 97,
     head: [["Article", "Qte", "Prix unitaire", "Total"]],
     body: lignes,
-    headStyles: { fillColor: noir, textColor: [255, 255, 255], fontStyle: "bold", fontSize: 9, cellPadding: 5 },
-    bodyStyles: { fontSize: 9, cellPadding: 5, textColor: noir },
+    headStyles: {
+      fillColor: noir,
+      textColor: [255, 255, 255],
+      fontStyle: "bold",
+      fontSize: 9,
+      cellPadding: 5,
+    },
+    bodyStyles: {
+      fontSize: 9,
+      cellPadding: 5,
+      textColor: noir,
+    },
     alternateRowStyles: { fillColor: [250, 250, 248] },
     columnStyles: {
       0: { cellWidth: 90 },
@@ -146,8 +175,8 @@ async function genererFacturePDF(cmd) {
   y += 7;
 
   if (cmd.reduction > 0) {
-    doc.setTextColor(59, 109, 17);
-    doc.text(`Reduction (${cmd.codePromo || ""}) :`, xLabel, y);
+    doc.setTextColor(...vert);
+    doc.text(`Reduction (${clean(cmd.codePromo || "")}) :`, xLabel, y);
     doc.text(`- ${Number(cmd.reduction).toLocaleString("fr-SN")} FCFA`, xValue, y, { align: "right" });
     y += 7;
   }
@@ -155,9 +184,13 @@ async function genererFacturePDF(cmd) {
   doc.setTextColor(...gris);
   doc.text("Livraison :", xLabel, y);
   doc.setTextColor(...noir);
-  doc.text(cmd.livraison === 0 ? "Gratuite" : `${Number(cmd.livraison).toLocaleString("fr-SN")} FCFA`, xValue, y, { align: "right" });
+  doc.text(
+    cmd.livraison === 0 ? "Gratuite" : `${Number(cmd.livraison).toLocaleString("fr-SN")} FCFA`,
+    xValue, y, { align: "right" }
+  );
   y += 5;
 
+  // Total final
   doc.setFillColor(...noir);
   doc.rect(xLabel - 5, y, 80, 12, "F");
   doc.setTextColor(255, 255, 255);
@@ -176,7 +209,7 @@ async function genererFacturePDF(cmd) {
   doc.text("Merci pour votre confiance !", 105, pageHeight - 15, { align: "center" });
   doc.text("B2S-STORE  |  Mbed Fass Yeumbeul, Dakar  |  +221 76 873 07 31", 105, pageHeight - 9, { align: "center" });
 
-  doc.save(`facture-b2s-store-${cmd.client?.nom || "client"}.pdf`);
+  doc.save(`facture-b2s-store-${clean(cmd.client?.nom || "client")}.pdf`);
 }
 
 export default function Suivi() {
@@ -243,7 +276,7 @@ export default function Suivi() {
           <>
             {commandes.length === 0 ? (
               <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center">
-                <p className="text-3xl mb-4">😕</p>
+                <p className="text-3xl mb-4">Aucun resultat</p>
                 <p className="font-bold text-lg mb-2">Aucune commande trouvee</p>
                 <p className="text-gray-400 text-sm">Verifiez votre {type === "email" ? "adresse email" : "numero de telephone"}</p>
               </div>
@@ -276,7 +309,7 @@ export default function Suivi() {
                           {STATUS_STEPS.map((step, i) => (
                             <div key={step} className="flex flex-col items-center flex-1">
                               <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold mb-1 ${i <= getStepIndex(cmd.statut) ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-400"}`}>
-                                {i <= getStepIndex(cmd.statut) ? "✓" : i + 1}
+                                {i <= getStepIndex(cmd.statut) ? "v" : i + 1}
                               </div>
                               <p className={`text-xs text-center hidden sm:block ${i <= getStepIndex(cmd.statut) ? "text-gray-700 font-medium" : "text-gray-400"}`}>
                                 {step}
