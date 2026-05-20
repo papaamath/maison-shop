@@ -9,9 +9,9 @@ import autoTable from "jspdf-autotable";
 const STATUS_STEPS = ["En attente", "Confirme", "En livraison", "Livre"];
 
 const STATUS_COLORS = {
-  "En attente": "bg-yellow-100 text-yellow-700",
+  "En attente": "bg-orange-100 text-orange-700",
   "Confirme": "bg-blue-100 text-blue-700",
-  "En livraison": "bg-purple-100 text-purple-700",
+  "En livraison": "bg-orange-100 text-orange-700",
   "Livre": "bg-green-100 text-green-700",
   "Annule": "bg-red-100 text-red-700",
 };
@@ -42,12 +42,13 @@ async function genererFacturePDF(cmd) {
   const doc = new jsPDF();
   const date = formatDate(cmd.createdAt);
 
-  const noir = [26, 26, 24];
-  const gris = [107, 107, 101];
-  const grisClair = [245, 244, 240];
-  const vert = [59, 109, 17];
+  const bleu = [23, 37, 84];
+  const orange = [249, 115, 22];
+  const gris = [107, 114, 128];
+  const grisClair = [239, 246, 255];
+  const vert = [22, 163, 74];
 
-  doc.setFillColor(...noir);
+  doc.setFillColor(...bleu);
   doc.rect(0, 0, 210, 50, "F");
 
   try {
@@ -92,7 +93,7 @@ async function genererFacturePDF(cmd) {
   doc.setFontSize(9);
   doc.text(`Date : ${clean(date)}`, 195, 29, { align: "right" });
 
-  doc.setFillColor(...vert);
+  doc.setFillColor(...orange);
   doc.roundedRect(155, 34, 40, 9, 2, 2, "F");
 
   doc.setTextColor(255, 255, 255);
@@ -108,7 +109,7 @@ async function genererFacturePDF(cmd) {
   doc.setFontSize(8);
   doc.text("INFORMATIONS CLIENT", 15, 65);
 
-  doc.setTextColor(...noir);
+  doc.setTextColor(...bleu);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
   doc.text(clean(`${cmd.client?.prenom || ""} ${cmd.client?.nom || ""}`), 15, 73);
@@ -138,7 +139,7 @@ async function genererFacturePDF(cmd) {
     head: [["Article", "Qte", "Prix unitaire", "Total"]],
     body: lignes,
     headStyles: {
-      fillColor: noir,
+      fillColor: bleu,
       textColor: [255, 255, 255],
       fontStyle: "bold",
       fontSize: 9,
@@ -147,10 +148,10 @@ async function genererFacturePDF(cmd) {
     bodyStyles: {
       fontSize: 9,
       cellPadding: 5,
-      textColor: noir,
+      textColor: bleu,
     },
     alternateRowStyles: {
-      fillColor: [250, 250, 248],
+      fillColor: [248, 250, 252],
     },
     columnStyles: {
       0: { cellWidth: 90 },
@@ -160,7 +161,7 @@ async function genererFacturePDF(cmd) {
     },
     margin: { left: 15, right: 15 },
     styles: {
-      lineColor: [230, 228, 224],
+      lineColor: [219, 234, 254],
       lineWidth: 0.1,
     },
   });
@@ -180,7 +181,7 @@ async function genererFacturePDF(cmd) {
 
   doc.setTextColor(...gris);
   doc.text("Sous-total :", xLabel, y);
-  doc.setTextColor(...noir);
+  doc.setTextColor(...bleu);
   doc.text(formatPrixPDF(sousTotal), xValue, y, { align: "right" });
   y += 7;
 
@@ -196,7 +197,7 @@ async function genererFacturePDF(cmd) {
   doc.setTextColor(...gris);
   doc.text("Livraison :", xLabel, y);
 
-  doc.setTextColor(...noir);
+  doc.setTextColor(...bleu);
   doc.text(
     Number(cmd.livraison || 0) === 0
       ? "Gratuite"
@@ -208,7 +209,7 @@ async function genererFacturePDF(cmd) {
 
   y += 5;
 
-  doc.setFillColor(...noir);
+  doc.setFillColor(...bleu);
   doc.rect(xLabel - 5, y, 80, 12, "F");
 
   doc.setTextColor(255, 255, 255);
@@ -259,9 +260,7 @@ export default function Suivi() {
 
       const filtrees = toutes.filter((cmd) => {
         if (type === "email") {
-          return (
-            cmd.client?.email?.toLowerCase() === recherche.toLowerCase()
-          );
+          return cmd.client?.email?.toLowerCase() === recherche.toLowerCase();
         }
 
         return (
@@ -287,36 +286,38 @@ export default function Suivi() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-orange-50">
       <Navbar />
 
       <div className="max-w-3xl mx-auto px-4 md:px-6 py-8 md:py-12">
         <div className="text-center mb-8">
-          <img
-            src="/logo.jpeg"
-            alt="B2S-STORE"
-            className="h-12 w-auto object-contain mx-auto mb-3"
-          />
+          <div className="bg-gradient-to-r from-blue-950 to-orange-500 p-3 rounded-3xl inline-block shadow-lg mb-4">
+            <img
+              src="/logo.jpeg"
+              alt="B2S-STORE"
+              className="h-12 w-auto object-contain mx-auto"
+            />
+          </div>
 
-          <h1 className="font-black text-2xl md:text-3xl mb-2">
+          <h1 className="font-black text-2xl md:text-4xl mb-2 text-blue-950">
             Suivi de commande
           </h1>
 
-          <p className="text-gray-400 text-sm">
+          <p className="text-gray-500 text-sm">
             Entrez votre email ou telephone pour retrouver vos commandes
           </p>
         </div>
 
-        <div className="bg-white rounded-2xl border border-gray-200 p-5 mb-6">
+        <div className="bg-white rounded-3xl border border-blue-100 p-5 mb-6 shadow-sm">
           <form onSubmit={handleRecherche} className="space-y-4">
             <div className="flex gap-3">
               <button
                 type="button"
                 onClick={() => setType("email")}
-                className={`flex-1 py-2.5 rounded-lg text-sm font-medium border transition ${
+                className={`flex-1 py-2.5 rounded-xl text-sm font-bold border transition ${
                   type === "email"
-                    ? "bg-gray-900 text-white border-gray-900"
-                    : "bg-white text-gray-600 border-gray-200"
+                    ? "bg-gradient-to-r from-blue-950 to-orange-500 text-white border-transparent shadow-md"
+                    : "bg-white text-blue-900 border-blue-100 hover:border-orange-300"
                 }`}
               >
                 Par email
@@ -325,10 +326,10 @@ export default function Suivi() {
               <button
                 type="button"
                 onClick={() => setType("telephone")}
-                className={`flex-1 py-2.5 rounded-lg text-sm font-medium border transition ${
+                className={`flex-1 py-2.5 rounded-xl text-sm font-bold border transition ${
                   type === "telephone"
-                    ? "bg-gray-900 text-white border-gray-900"
-                    : "bg-white text-gray-600 border-gray-200"
+                    ? "bg-gradient-to-r from-blue-950 to-orange-500 text-white border-transparent shadow-md"
+                    : "bg-white text-blue-900 border-blue-100 hover:border-orange-300"
                 }`}
               >
                 Par telephone
@@ -343,13 +344,13 @@ export default function Suivi() {
                 placeholder={
                   type === "email" ? "votre@email.com" : "+221 77 000 00 00"
                 }
-                className="flex-1 border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-gray-400"
+                className="flex-1 border border-blue-100 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
               />
 
               <button
                 type="submit"
                 disabled={loading}
-                className="bg-gray-900 text-white px-5 py-3 rounded-lg font-medium hover:bg-gray-700 transition disabled:opacity-50"
+                className="bg-blue-950 text-white px-5 py-3 rounded-xl font-bold hover:bg-blue-900 transition disabled:opacity-50"
               >
                 {loading ? "..." : "Chercher"}
               </button>
@@ -360,14 +361,14 @@ export default function Suivi() {
         {cherche && !loading && (
           <>
             {commandes.length === 0 ? (
-              <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center">
-                <p className="text-3xl mb-4">Aucun resultat</p>
+              <div className="bg-white rounded-3xl border border-blue-100 p-12 text-center shadow-sm">
+                <p className="text-5xl mb-4">😕</p>
 
-                <p className="font-bold text-lg mb-2">
+                <p className="font-black text-xl mb-2 text-blue-950">
                   Aucune commande trouvee
                 </p>
 
-                <p className="text-gray-400 text-sm">
+                <p className="text-gray-500 text-sm">
                   Verifiez votre{" "}
                   {type === "email"
                     ? "adresse email"
@@ -376,18 +377,18 @@ export default function Suivi() {
               </div>
             ) : (
               <div className="space-y-5">
-                <p className="text-gray-500 text-sm">
+                <p className="text-blue-900 text-sm font-medium">
                   {commandes.length} commande(s) trouvee(s)
                 </p>
 
                 {commandes.map((cmd) => (
                   <div
                     key={cmd.id}
-                    className="bg-white rounded-2xl border border-gray-200 overflow-hidden"
+                    className="bg-white rounded-3xl border border-blue-100 overflow-hidden shadow-sm"
                   >
-                    <div className="p-5 border-b border-gray-100 flex items-start justify-between gap-3 flex-wrap">
+                    <div className="p-5 border-b border-blue-100 flex items-start justify-between gap-3 flex-wrap">
                       <div>
-                        <p className="font-bold text-base">
+                        <p className="font-bold text-base text-blue-950">
                           Commande du {formatDate(cmd.createdAt)}
                         </p>
 
@@ -409,7 +410,7 @@ export default function Suivi() {
                         {cmd.statut === "Livre" && (
                           <button
                             onClick={() => genererFacturePDF(cmd)}
-                            className="bg-green-600 text-white text-xs font-bold px-4 py-2 rounded-full hover:bg-green-700 transition"
+                            className="bg-orange-500 text-white text-xs font-bold px-4 py-2 rounded-full hover:bg-orange-600 transition"
                           >
                             Telecharger la facture PDF
                           </button>
@@ -418,7 +419,7 @@ export default function Suivi() {
                     </div>
 
                     {cmd.statut !== "Annule" && (
-                      <div className="px-5 py-4 border-b border-gray-100">
+                      <div className="px-5 py-4 border-b border-blue-100">
                         <div className="flex items-center justify-between mb-2">
                           {STATUS_STEPS.map((step, i) => (
                             <div
@@ -428,17 +429,17 @@ export default function Suivi() {
                               <div
                                 className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold mb-1 ${
                                   i <= getStepIndex(cmd.statut)
-                                    ? "bg-gray-900 text-white"
-                                    : "bg-gray-100 text-gray-400"
+                                    ? "bg-blue-950 text-white"
+                                    : "bg-blue-50 text-gray-400"
                                 }`}
                               >
-                                {i <= getStepIndex(cmd.statut) ? "v" : i + 1}
+                                {i <= getStepIndex(cmd.statut) ? "✓" : i + 1}
                               </div>
 
                               <p
                                 className={`text-xs text-center hidden sm:block ${
                                   i <= getStepIndex(cmd.statut)
-                                    ? "text-gray-700 font-medium"
+                                    ? "text-blue-950 font-bold"
                                     : "text-gray-400"
                                 }`}
                               >
@@ -448,9 +449,9 @@ export default function Suivi() {
                           ))}
                         </div>
 
-                        <div className="relative h-1 bg-gray-100 rounded-full mx-3 -mt-3 mb-3">
+                        <div className="relative h-1 bg-blue-50 rounded-full mx-3 -mt-3 mb-3">
                           <div
-                            className="absolute h-1 bg-gray-900 rounded-full transition-all duration-500"
+                            className="absolute h-1 bg-gradient-to-r from-blue-950 to-orange-500 rounded-full transition-all duration-500"
                             style={{
                               width: `${Math.max(
                                 0,
@@ -465,51 +466,53 @@ export default function Suivi() {
                     )}
 
                     <div className="p-5">
-                      <p className="font-semibold text-sm mb-3">
+                      <p className="font-bold text-sm mb-3 text-blue-950">
                         Articles commandes
                       </p>
 
                       {cmd.articles?.map((a, i) => (
                         <div
                           key={i}
-                          className="flex justify-between text-sm py-2 border-b border-gray-50"
+                          className="flex justify-between text-sm py-2 border-b border-blue-50"
                         >
                           <span className="text-gray-700">
                             {a.nom} x{a.quantite}
                           </span>
 
-                          <span className="font-medium">
+                          <span className="font-medium text-blue-950">
                             {formatPrix(a.prix * a.quantite)}
                           </span>
                         </div>
                       ))}
 
                       {cmd.reduction > 0 && (
-                        <div className="flex justify-between text-sm py-2 border-b border-gray-50 text-green-600">
+                        <div className="flex justify-between text-sm py-2 border-b border-blue-50 text-green-600">
                           <span>Reduction ({cmd.codePromo})</span>
                           <span>- {formatPrix(cmd.reduction)}</span>
                         </div>
                       )}
 
-                      <div className="flex justify-between text-sm py-2 border-b border-gray-50">
+                      <div className="flex justify-between text-sm py-2 border-b border-blue-50">
                         <span className="text-gray-500">Livraison</span>
 
-                        <span>
+                        <span className="text-blue-950">
                           {cmd.livraison === 0
                             ? "Gratuite"
                             : formatPrix(cmd.livraison)}
                         </span>
                       </div>
 
-                      <div className="flex justify-between font-black text-base pt-3">
+                      <div className="flex justify-between font-black text-base pt-3 text-blue-950">
                         <span>Total</span>
-                        <span>{formatPrix(cmd.total)}</span>
+                        <span className="text-orange-500">
+                          {formatPrix(cmd.total)}
+                        </span>
                       </div>
 
                       {cmd.statut === "Livre" && (
                         <button
                           onClick={() => genererFacturePDF(cmd)}
-                          className="w-full mt-4 bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 transition"
+                          className="w-full mt-4 bg-gradient-to-r from-blue-950 to-orange-500 text-white py-3 rounded-xl font-bold hover:opacity-90 transition"
                         >
                           Telecharger ma facture PDF
                         </button>
