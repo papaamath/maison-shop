@@ -122,6 +122,7 @@ export default function Caisse() {
     { to: "/admin/promos", label: "Promotions" },
     { to: "/admin/caisse", label: "Caisse", active: true },
     { to: "/shop", label: "Voir la boutique" },
+    { to: "/admin/associes", label: "Associes" },
   ];
 
   return (

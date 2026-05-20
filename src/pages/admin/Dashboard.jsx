@@ -96,6 +96,7 @@ export default function Dashboard() {
     { to: "/admin/promos", label: "Promotions" },
     { to: "/admin/caisse", label: "Caisse" },
     { to: "/shop", label: "Voir la boutique" },
+    { to: "/admin/associes", label: "Associes" },
   ];
 
   return (
