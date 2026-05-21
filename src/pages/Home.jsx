@@ -47,55 +47,15 @@ export default function Home() {
   }
 
   const categories = [
-    {
-      nom: "Sport",
-      desc: "Ballons, crampons, equipements",
-      color: "bg-orange-50 border-orange-200 text-orange-700",
-      icon: "⚽",
-    },
-    {
-      nom: "High-Tech",
-      desc: "Gaming, casques, claviers",
-      color: "bg-blue-50 border-blue-200 text-blue-700",
-      icon: "💻",
-    },
-    {
-      nom: "Electricite",
-      desc: "Power bank, aspirateurs",
-      color: "bg-yellow-50 border-yellow-200 text-yellow-700",
-      icon: "🔋",
-    },
-    {
-      nom: "Montres",
-      desc: "Montres hommes et femmes",
-      color: "bg-indigo-50 border-indigo-200 text-indigo-700",
-      icon: "⌚",
-    },
-    {
-      nom: "Sacs",
-      desc: "Sacs a dos, sacs de sport",
-      color: "bg-orange-50 border-orange-200 text-orange-700",
-      icon: "🎒",
-    },
-    {
-      nom: "Toilettes",
-      desc: "Tondeuses, soins personnels",
-      color: "bg-pink-50 border-pink-200 text-pink-700",
-      icon: "🪒",
-    },
-    {
-      nom: "Papeterie",
-      desc: "Bics, fournitures",
-      color: "bg-red-50 border-red-200 text-red-700",
-      icon: "🖊️",
-    },
-    {
-      nom: "Accessoires",
-      desc: "Divers accessoires",
-      color: "bg-gray-50 border-gray-200 text-gray-700",
-      icon: "🎧",
-    },
-  ];
+  { nom: "Sport", icon: "⚽", desc: "Ballons, crampons, equipements", color: "bg-green-50 border-green-200 text-green-700" },
+  { nom: "Maillot", icon: "👕", desc: "Maillots de foot et sport", color: "bg-blue-50 border-blue-200 text-blue-700" },
+  { nom: "Electronique", icon: "🎮", desc: "Gaming, casques, claviers", color: "bg-indigo-50 border-indigo-200 text-indigo-700" },
+  { nom: "Montres", icon: "⌚", desc: "Montres hommes et femmes", color: "bg-purple-50 border-purple-200 text-purple-700" },
+  { nom: "Sacs", icon: "🎒", desc: "Sacs a dos, sacs de sport", color: "bg-orange-50 border-orange-200 text-orange-700" },
+  { nom: "Toilettes", icon: "🪮", desc: "Tondeuses, soins personnels", color: "bg-pink-50 border-pink-200 text-pink-700" },
+  { nom: "Femme", icon: "👩", desc: "Maquillage, chaussures, bracelets", color: "bg-rose-50 border-rose-200 text-rose-700" },
+  { nom: "Papeterie", icon: "✏️", desc: "Bics, fournitures", color: "bg-yellow-50 border-yellow-200 text-yellow-700" },
+];
 
   return (
     <div className="min-h-screen bg-white">

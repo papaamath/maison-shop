@@ -9,13 +9,13 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 const CATEGORIES = [
   "Tous",
   "Sport",
-  "High-Tech",
-  "Electricite",
+  "Maillot",
+  "Electronique",
   "Montres",
   "Sacs",
   "Toilettes",
+  "Femme",
   "Papeterie",
-  "Accessoires",
 ];
 
 export default function Shop() {

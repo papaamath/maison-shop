@@ -5,7 +5,16 @@ import { Link } from "react-router-dom";
 import { formatPrix } from "../../utils/format";
 import ImageUpload from "../../components/ImageUpload";
 
-const CATEGORIES = ["Sport","High-Tech","Electricite","Montres","Sacs","Toilettes","Papeterie","Accessoires"];
+const CATEGORIES = [
+  "Sport",
+  "Maillot",
+  "Electronique",
+  "Montres",
+  "Sacs",
+  "Toilettes",
+  "Femme",
+  "Papeterie",
+];
 const FORM_VIDE = { nom: "", prix: "", categorie: "Sport", description: "", stock: "", image: "", rupture: false };
 
 export default function AdminProducts() {
