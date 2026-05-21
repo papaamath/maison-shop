@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { doc, getDoc, collection, getDocs } from "firebase/firestore";
+import { doc, getDoc, collection, getDocs, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase/config";
 import { useParams, useNavigate } from "react-router-dom";
 import { useCart } from "../context/CartContext";
@@ -14,6 +14,10 @@ export default function Product() {
   const [qty, setQty] = useState(1);
   const [toast, setToast] = useState(false);
   const [onglet, setOnglet] = useState("description");
+  const [avis, setAvis] = useState([]);
+  const [showAvisForm, setShowAvisForm] = useState(false);
+  const [avisForm, setAvisForm] = useState({ nom: "", note: 5, commentaire: "" });
+  const [avisLoading, setAvisLoading] = useState(false);
   const { addToCart } = useCart();
   const navigate = useNavigate();
 
@@ -27,9 +31,15 @@ export default function Product() {
         const allSnap = await getDocs(collection(db, "produits"));
         const all = allSnap.docs
           .map(d => ({ id: d.id, ...d.data() }))
-          .filter(d => d.id !== id && (d.categorie || d.Cathégorie) === (p.categorie || p.Cathégorie))
+          .filter(d => d.id !== id && (d.categorie || d.Cathegorie) === (p.categorie || p.Cathegorie))
           .slice(0, 4);
         setSimilaires(all);
+
+        const avisSnap = await getDocs(collection(db, "produits", id, "avis"));
+        const avisData = avisSnap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+        setAvis(avisData);
       }
       setLoading(false);
     }
@@ -47,7 +57,6 @@ export default function Product() {
         commentaire: avisForm.commentaire,
         createdAt: serverTimestamp(),
       });
-
       const snap = await getDocs(collection(db, "produits", id, "avis"));
       setAvis(snap.docs
         .map(d => ({ id: d.id, ...d.data() }))
@@ -65,6 +74,17 @@ export default function Product() {
     for (let i = 0; i < qty; i++) addToCart(produit);
     setToast(true);
     setTimeout(() => setToast(false), 2500);
+  }
+
+  function partagerWhatsApp() {
+    const url = window.location.href;
+    const msg = `Regarde ce produit sur B2S-STORE : ${nom} - ${formatPrix(prix)} 👉 ${url}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank");
+  }
+
+  function copierLien() {
+    navigator.clipboard.writeText(window.location.href);
+    alert("Lien copie !");
   }
 
   if (loading) return (
@@ -86,7 +106,7 @@ export default function Product() {
         <p className="text-5xl mb-4">😕</p>
         <p className="text-xl font-semibold mb-4">Produit introuvable</p>
         <button onClick={() => navigate("/shop")} className="bg-blue-950 text-white px-6 py-3 rounded-xl hover:bg-blue-900 transition">
-          Retour à la boutique
+          Retour a la boutique
         </button>
       </div>
     </div>
@@ -95,7 +115,7 @@ export default function Product() {
   const stockDisponible = Number(produit.stock || produit.Stock || 0);
   const nom = produit.nom || produit.Nom || "";
   const prix = Number(produit.prix || produit.Prix || 0);
-  const categorie = produit.categorie || produit.Cathégorie || "";
+  const categorie = produit.categorie || produit.Cathegorie || "";
   const description = produit.description || produit.Description || "";
   const image = produit.image || produit.Image || "";
 
@@ -103,6 +123,7 @@ export default function Product() {
     <div className="min-h-screen bg-white">
       <Navbar />
 
+      {/* Fil d'ariane */}
       <div className="bg-blue-50 border-b border-blue-100">
         <div className="max-w-6xl mx-auto px-6 py-3 text-sm text-blue-700 flex items-center gap-2">
           <span className="cursor-pointer hover:text-orange-500 transition" onClick={() => navigate("/")}>Accueil</span>
@@ -118,6 +139,7 @@ export default function Product() {
       <div className="max-w-6xl mx-auto px-6 py-10">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-12 mb-16">
 
+          {/* Image */}
           <div>
             <div className="bg-blue-50 rounded-3xl overflow-hidden aspect-square border border-blue-100 mb-4 shadow-sm">
               {image ? (
@@ -126,27 +148,27 @@ export default function Product() {
                 <div className="w-full h-full flex items-center justify-center text-8xl">📦</div>
               )}
             </div>
-
             <div className="flex gap-2 flex-wrap">
               {stockDisponible > 0 && stockDisponible <= 5 && (
                 <span className="bg-orange-100 text-orange-700 text-xs font-bold px-3 py-1 rounded-full">
-                  🔥 Plus que {stockDisponible} en stock !
+                  Plus que {stockDisponible} en stock !
                 </span>
               )}
               {stockDisponible > 5 && (
                 <span className="bg-green-100 text-green-700 text-xs font-bold px-3 py-1 rounded-full">
-                  ✓ En stock
+                  En stock
                 </span>
               )}
               <span className="bg-blue-100 text-blue-800 text-xs font-bold px-3 py-1 rounded-full">
-                🚚 Livraison 24-48h
+                Livraison 24-48h
               </span>
               <span className="bg-orange-100 text-orange-700 text-xs font-bold px-3 py-1 rounded-full">
-                ↩️ Retour 30 jours
+                Retour 30 jours
               </span>
             </div>
           </div>
 
+          {/* Infos */}
           <div>
             <p className="text-xs text-orange-500 uppercase tracking-widest mb-2 font-bold">{categorie}</p>
             <h1 className="font-black text-4xl mb-4 leading-tight text-blue-950">{nom}</h1>
@@ -162,52 +184,59 @@ export default function Product() {
             <div className="mb-6">
               {stockDisponible === 0 ? (
                 <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4 text-center">
-                  <p className="text-orange-600 font-semibold">😔 Produit en rupture de stock</p>
-                  <p className="text-orange-400 text-sm mt-1">Revenez bientôt !</p>
+                  <p className="text-orange-600 font-semibold">Produit en rupture de stock</p>
+                  <p className="text-orange-400 text-sm mt-1">Revenez bientot !</p>
                 </div>
               ) : (
                 <>
+                  {/* Quantite */}
                   <div className="flex items-center gap-4 mb-4">
-                    <span className="text-sm text-blue-900 font-medium">Quantité :</span>
+                    <span className="text-sm text-blue-900 font-medium">Quantite :</span>
                     <div className="flex items-center border border-blue-100 rounded-xl overflow-hidden">
-                      <button
-                        onClick={() => setQty(q => Math.max(1, q - 1))}
-                        className="px-5 py-3 bg-blue-50 hover:bg-blue-100 text-xl font-bold transition text-blue-950"
-                      >
-                        −
+                      <button onClick={() => setQty(q => Math.max(1, q - 1))}
+                        className="px-5 py-3 bg-blue-50 hover:bg-blue-100 text-xl font-bold transition text-blue-950">
+                        -
                       </button>
                       <span className="px-6 py-3 font-bold text-lg min-w-16 text-center">{qty}</span>
-                      <button
-                        onClick={() => setQty(q => Math.min(stockDisponible, q + 1))}
-                        className="px-5 py-3 bg-blue-50 hover:bg-blue-100 text-xl font-bold transition text-blue-950"
-                      >
+                      <button onClick={() => setQty(q => Math.min(stockDisponible, q + 1))}
+                        className="px-5 py-3 bg-blue-50 hover:bg-blue-100 text-xl font-bold transition text-blue-950">
                         +
                       </button>
                     </div>
                     <span className="text-xs text-gray-400">{stockDisponible} disponibles</span>
                   </div>
 
+                  {/* Boutons */}
                   <div className="flex flex-col gap-3">
-                    <button
-                      onClick={handleAjout}
-                      className="w-full bg-blue-950 text-white py-4 rounded-xl font-bold text-lg hover:bg-blue-900 transition flex items-center justify-center gap-2 shadow-lg"
-                    >
-                      🛍 Ajouter au panier — {formatPrix(prix * qty)}
+                    <button onClick={handleAjout}
+                      className="w-full bg-blue-950 text-white py-4 rounded-xl font-bold text-lg hover:bg-blue-900 transition flex items-center justify-center gap-2 shadow-lg">
+                      Ajouter au panier — {formatPrix(prix * qty)}
                     </button>
-                    <button
-                      onClick={() => { handleAjout(); navigate("/checkout"); }}
-                      className="w-full bg-gradient-to-r from-blue-950 to-orange-500 text-white py-4 rounded-xl font-bold text-lg hover:opacity-90 transition shadow-lg"
-                    >
-                      ⚡ Commander maintenant
+                    <button onClick={() => { handleAjout(); navigate("/checkout"); }}
+                      className="w-full bg-gradient-to-r from-blue-950 to-orange-500 text-white py-4 rounded-xl font-bold text-lg hover:opacity-90 transition shadow-lg">
+                      Commander maintenant
+                    </button>
+                  </div>
+
+                  {/* Partager */}
+                  <div className="flex gap-3 mt-3">
+                    <button onClick={partagerWhatsApp}
+                      className="flex-1 bg-green-600 text-white py-3 rounded-xl font-medium hover:bg-green-700 transition text-sm">
+                      Partager sur WhatsApp
+                    </button>
+                    <button onClick={copierLien}
+                      className="bg-gray-100 text-gray-700 px-4 py-3 rounded-xl font-medium hover:bg-gray-200 transition text-sm">
+                      Copier le lien
                     </button>
                   </div>
                 </>
               )}
             </div>
 
+            {/* Infos livraison */}
             <div className="grid grid-cols-3 gap-3 mt-6">
               {[
-                { icon: "🚚", title: "Livraison rapide", desc: "24-48h à Dakar" },
+                { icon: "🚚", title: "Livraison rapide", desc: "24-48h a Dakar" },
                 { icon: "💳", title: "Wave & Orange Money", desc: "Paiement facile" },
                 { icon: "↩️", title: "Retours gratuits", desc: "Sous 30 jours" },
               ].map(item => (
@@ -221,21 +250,16 @@ export default function Product() {
           </div>
         </div>
 
+        {/* Onglets */}
         <div className="border-b border-blue-100 mb-8">
           <div className="flex gap-8">
             {[
               { id: "description", label: "Description" },
+              { id: "avis", label: `Avis clients (${avis.length})` },
               { id: "livraison", label: "Livraison & Retours" },
             ].map(o => (
-              <button
-                key={o.id}
-                onClick={() => setOnglet(o.id)}
-                className={`pb-4 font-semibold text-sm border-b-2 transition ${
-                  onglet === o.id
-                    ? "border-orange-500 text-orange-500"
-                    : "border-transparent text-gray-400 hover:text-blue-950"
-                }`}
-              >
+              <button key={o.id} onClick={() => setOnglet(o.id)}
+                className={`pb-4 font-semibold text-sm border-b-2 transition ${onglet === o.id ? "border-orange-500 text-orange-500" : "border-transparent text-gray-400 hover:text-blue-950"}`}>
                 {o.label}
               </button>
             ))}
@@ -251,13 +275,104 @@ export default function Product() {
             </div>
           )}
 
+          {onglet === "avis" && (
+            <div className="max-w-2xl">
+              {avis.length > 0 && (
+                <div className="bg-gray-50 rounded-2xl p-6 mb-6 flex items-center gap-6">
+                  <div className="text-center">
+                    <p className="font-black text-5xl text-gray-900">
+                      {(avis.reduce((a, v) => a + v.note, 0) / avis.length).toFixed(1)}
+                    </p>
+                    <div className="flex gap-0.5 justify-center mt-1">
+                      {[1,2,3,4,5].map(s => (
+                        <span key={s} className={`text-xl ${s <= Math.round(avis.reduce((a,v) => a+v.note,0)/avis.length) ? "text-yellow-400" : "text-gray-200"}`}>★</span>
+                      ))}
+                    </div>
+                    <p className="text-gray-400 text-sm mt-1">{avis.length} avis</p>
+                  </div>
+                </div>
+              )}
+
+              {!showAvisForm && (
+                <button onClick={() => setShowAvisForm(true)}
+                  className="mb-6 bg-blue-950 text-white px-6 py-3 rounded-xl font-medium hover:bg-blue-900 transition">
+                  Laisser un avis
+                </button>
+              )}
+
+              {showAvisForm && (
+                <form onSubmit={soumettreAvis} className="bg-gray-50 rounded-2xl p-6 mb-6 space-y-4">
+                  <h3 className="font-bold text-lg">Votre avis</h3>
+                  <div>
+                    <label className="text-sm text-gray-500 block mb-1">Votre nom</label>
+                    <input value={avisForm.nom} onChange={e => setAvisForm(f => ({ ...f, nom: e.target.value }))} required
+                      className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none bg-white"
+                      placeholder="Mamadou D." />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-500 block mb-2">Note</label>
+                    <div className="flex gap-2">
+                      {[1,2,3,4,5].map(s => (
+                        <button key={s} type="button" onClick={() => setAvisForm(f => ({ ...f, note: s }))}
+                          className={`text-3xl transition ${s <= avisForm.note ? "text-yellow-400" : "text-gray-200 hover:text-yellow-300"}`}>
+                          ★
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-500 block mb-1">Commentaire</label>
+                    <textarea value={avisForm.commentaire} onChange={e => setAvisForm(f => ({ ...f, commentaire: e.target.value }))} required
+                      rows={3}
+                      className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none bg-white resize-none"
+                      placeholder="Partagez votre experience..." />
+                  </div>
+                  <div className="flex gap-3">
+                    <button type="button" onClick={() => setShowAvisForm(false)}
+                      className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-lg font-medium hover:bg-gray-100 transition">
+                      Annuler
+                    </button>
+                    <button type="submit" disabled={avisLoading}
+                      className="flex-1 bg-blue-950 text-white py-2.5 rounded-lg font-medium hover:bg-blue-900 transition disabled:opacity-50">
+                      {avisLoading ? "Envoi..." : "Publier l'avis"}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {avis.length === 0 ? (
+                <div className="text-center py-12 text-gray-400">
+                  <p className="text-4xl mb-3">💬</p>
+                  <p className="font-semibold">Aucun avis pour l'instant</p>
+                  <p className="text-sm mt-1">Soyez le premier a donner votre avis !</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {avis.map(a => (
+                    <div key={a.id} className="bg-gray-50 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="font-bold text-sm">{a.nom}</p>
+                        <div className="flex gap-0.5">
+                          {[1,2,3,4,5].map(s => (
+                            <span key={s} className={`text-sm ${s <= a.note ? "text-yellow-400" : "text-gray-200"}`}>★</span>
+                          ))}
+                        </div>
+                      </div>
+                      <p className="text-gray-600 text-sm leading-relaxed">{a.commentaire}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {onglet === "livraison" && (
             <div className="max-w-2xl space-y-4">
               {[
-                { icon: "🚚", title: "Livraison standard", desc: "24-48h à Dakar. 3-5 jours pour les autres régions du Sénégal." },
-                { icon: "💰", title: "Frais de livraison", desc: "2 500 FCFA. Gratuite pour toute commande supérieure à 50 000 FCFA." },
-                { icon: "↩️", title: "Politique de retour", desc: "Retours acceptés sous 30 jours après réception. Produit non utilisé et dans son emballage d'origine." },
-                { icon: "📞", title: "Service client", desc: "Contactez-nous par WhatsApp ou email pour tout problème avec votre commande." },
+                { icon: "🚚", title: "Livraison standard", desc: "24-48h a Dakar. 3-5 jours pour les autres regions." },
+                { icon: "💰", title: "Frais de livraison", desc: "2 500 FCFA. Gratuite pour toute commande superieure a 50 000 FCFA." },
+                { icon: "↩️", title: "Politique de retour", desc: "Retours acceptes sous 30 jours apres reception." },
+                { icon: "📞", title: "Service client", desc: "Contactez-nous par WhatsApp ou email pour tout probleme." },
               ].map(item => (
                 <div key={item.title} className="flex gap-4 p-4 bg-blue-50 rounded-xl border border-blue-100">
                   <span className="text-2xl">{item.icon}</span>
@@ -271,16 +386,14 @@ export default function Product() {
           )}
         </div>
 
+        {/* Produits similaires */}
         {similaires.length > 0 && (
           <div>
             <h2 className="font-black text-2xl mb-6 text-blue-950">Vous aimerez aussi</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {similaires.map(p => (
-                <div
-                  key={p.id}
-                  onClick={() => navigate(`/product/${p.id}`)}
-                  className="bg-white rounded-2xl border border-blue-100 overflow-hidden hover:-translate-y-1 transition-transform cursor-pointer shadow-sm hover:shadow-xl"
-                >
+                <div key={p.id} onClick={() => navigate(`/product/${p.id}`)}
+                  className="bg-white rounded-2xl border border-blue-100 overflow-hidden hover:-translate-y-1 transition-transform cursor-pointer shadow-sm hover:shadow-xl">
                   <div className="h-40 bg-blue-50 overflow-hidden">
                     {(p.image || p.Image) ? (
                       <img src={p.image || p.Image} alt={p.nom || p.Nom} className="w-full h-full object-cover" />
@@ -299,14 +412,13 @@ export default function Product() {
         )}
       </div>
 
+      {/* Toast */}
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-blue-950 text-white px-6 py-3 rounded-xl text-sm font-medium z-50 shadow-lg flex items-center gap-2">
-          ✓ {nom} ajouté au panier !
-          <button
-            onClick={() => navigate("/checkout")}
-            className="bg-orange-500 text-white px-3 py-1 rounded-lg text-xs ml-2 hover:bg-orange-600 transition"
-          >
-            Voir le panier →
+          {nom} ajoute au panier !
+          <button onClick={() => navigate("/checkout")}
+            className="bg-orange-500 text-white px-3 py-1 rounded-lg text-xs ml-2 hover:bg-orange-600 transition">
+            Voir le panier
           </button>
         </div>
       )}
