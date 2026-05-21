@@ -55,6 +55,7 @@ export default function Home() {
   { nom: "Toilettes", icon: "🪮", desc: "Tondeuses, soins personnels", color: "bg-pink-50 border-pink-200 text-pink-700" },
   { nom: "Femme", icon: "👩", desc: "Maquillage, chaussures, bracelets", color: "bg-rose-50 border-rose-200 text-rose-700" },
   { nom: "Papeterie", icon: "✏️", desc: "Bics, fournitures", color: "bg-yellow-50 border-yellow-200 text-yellow-700" },
+  { nom: "Accessoires", icon: "👜", desc: "Ceintures, lunettes, bijoux", color: "bg-teal-50 border-teal-200 text-teal-700" },
 ];
 
   return (

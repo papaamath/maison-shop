@@ -14,6 +14,7 @@ const CATEGORIES = [
   "Toilettes",
   "Femme",
   "Papeterie",
+  "Accessoires",
 ];
 const FORM_VIDE = { nom: "", prix: "", categorie: "Sport", description: "", stock: "", image: "", rupture: false };
 

@@ -16,6 +16,7 @@ const CATEGORIES = [
   "Toilettes",
   "Femme",
   "Papeterie",
+  "Accessoires",
 ];
 
 export default function Shop() {
