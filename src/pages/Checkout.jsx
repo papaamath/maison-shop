@@ -68,79 +68,88 @@ export default function Checkout() {
   function handleChange(e) {
     setForm(f => ({ ...f, [e.target.name]: e.target.value }));
   }
-
   async function appliquerPromo() {
-    if (!codePromo.trim()) return;
+  if (!codePromo.trim()) return;
+  setPromoLoading(true);
+  setPromoError("");
+  setPromoAppliquee(null);
+  try {
+    const snap = await getDocs(collection(db, "promos"));
+    const toutes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const promo = toutes.find(p => p.code === codePromo.toUpperCase() && p.actif);
 
-    setPromoLoading(true);
-    setPromoError("");
-    setPromoAppliquee(null);
-
-    try {
-      const snap = await getDocs(collection(db, "promos"));
-      const toutes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const promo = toutes.find(p => p.code === codePromo.toUpperCase() && p.actif);
-
-      if (!promo) {
-        setPromoError("Code promo invalide ou expiré.");
-      } else if (promo.minCommande > 0 && total < promo.minCommande) {
-        setPromoError(`Commande minimum de ${formatPrix(promo.minCommande)} requis.`);
+    if (!promo) {
+      setPromoError("Code promo invalide ou expire.");
+    } else if (promo.dateExpiration && new Date(promo.dateExpiration) < new Date()) {
+      setPromoError("Ce code promo a expire.");
+    } else if (promo.clientsUtilises?.includes(form.email)) {
+      setPromoError("Vous avez deja utilise ce code promo.");
+    } else if (promo.minCommande > 0 && total < promo.minCommande) {
+      setPromoError(`Commande minimum de ${formatPrix(promo.minCommande)} requis.`);
+    } else if (promo.portee === "produit") {
+      const produitDansPanier = cart.find(i => i.id === promo.produitId);
+      if (!produitDansPanier) {
+        setPromoError(`Ce code est valable uniquement pour : ${promo.produitNom}`);
       } else {
         setPromoAppliquee(promo);
       }
-    } catch (err) {
-      setPromoError("Erreur lors de la vérification.");
+    } else {
+      setPromoAppliquee(promo);
+    }
+  } catch {
+    setPromoError("Erreur lors de la verification.");
+  }
+  setPromoLoading(false);
+}
+
+
+
+async function handleCommande(e) {
+  e.preventDefault();
+  if (cart.length === 0) return;
+  setLoading(true);
+
+  try {
+    await addDoc(collection(db, "commandes"), {
+      client: form,
+      articles: cart.map(i => ({
+        id: i.id,
+        nom: i.nom,
+        prix: i.prix,
+        quantite: i.qty,
+      })),
+      total: totalFinal,
+      livraison,
+      reduction,
+      codePromo: promoAppliquee?.code || null,
+      modeLivraison,
+      statut: "En attente",
+      createdAt: serverTimestamp(),
+    });
+
+    // Met a jour le code promo avec le client qui l'a utilise
+    if (promoAppliquee) {
+      await updateDoc(doc(db, "promos", promoAppliquee.id), {
+        utilisations: (promoAppliquee.utilisations || 0) + 1,
+        clientsUtilises: [...(promoAppliquee.clientsUtilises || []), form.email],
+      });
     }
 
-    setPromoLoading(false);
+    await envoyerEmailAdmin({
+      client: form,
+      articles: cart.map(i => ({ nom: i.nom, quantite: i.qty, prix: i.prix })),
+      total: totalFinal,
+    });
+
+    clearCart();
+    navigate("/confirmation");
+  } catch (err) {
+    console.error(err);
+    alert("Erreur lors de la commande. Reessayez.");
   }
 
-  async function handleCommande(e) {
-    e.preventDefault();
-
-    if (cart.length === 0) return;
-
-    setLoading(true);
-
-    try {
-      await addDoc(collection(db, "commandes"), {
-        client: form,
-        articles: cart.map(i => ({
-          id: i.id,
-          nom: i.nom,
-          prix: i.prix,
-          quantite: i.qty,
-        })),
-        total: totalFinal,
-        livraison,
-        reduction,
-        codePromo: promoAppliquee?.code || null,
-        modeLivraison,
-        statut: "En attente",
-        createdAt: serverTimestamp(),
-      });
-
-      if (promoAppliquee) {
-        await updateDoc(doc(db, "promos", promoAppliquee.id), {
-          utilisations: (promoAppliquee.utilisations || 0) + 1,
-        });
-      }
-
-      await envoyerEmailAdmin({
-        client: form,
-        articles: cart.map(i => ({ nom: i.nom, quantite: i.qty, prix: i.prix })),
-        total: totalFinal,
-      });
-
-      clearCart();
-      navigate("/confirmation");
-    } catch (err) {
-      console.error(err);
-      alert("Erreur lors de la commande. Réessayez.");
-    }
-
-    setLoading(false);
-  }
+  setLoading(false);
+}
 
   if (cart.length === 0) {
     return (
