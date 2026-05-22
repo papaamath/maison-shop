@@ -3,6 +3,7 @@ import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc } from "firebase
 import { db } from "../../firebase/config";
 import { Link } from "react-router-dom";
 import { formatPrix } from "../../utils/format";
+import emailjs from "@emailjs/browser";
 
 const FORM_VIDE = {
   code: "",
@@ -10,7 +11,6 @@ const FORM_VIDE = {
   valeur: "",
   minCommande: "",
   actif: true,
-  uneFoisParClient: true,
   portee: "boutique",
   produitId: "",
   produitNom: "",
@@ -75,9 +75,8 @@ function MobileNav({ open, setOpen }) {
 
 function statutPromo(p) {
   if (!p.actif) return { label: "Inactif", color: "bg-gray-100 text-gray-500" };
-  if (p.dateExpiration) {
-    const exp = new Date(p.dateExpiration);
-    if (exp < new Date()) return { label: "Expire", color: "bg-red-100 text-red-600" };
+  if (p.dateExpiration && new Date(p.dateExpiration) < new Date()) {
+    return { label: "Expire", color: "bg-red-100 text-red-600" };
   }
   return { label: "Actif", color: "bg-green-100 text-green-700" };
 }
@@ -90,6 +89,7 @@ export default function AdminPromos() {
   const [form, setForm] = useState(FORM_VIDE);
   const [saving, setSaving] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [envoi, setEnvoi] = useState(null);
 
   useEffect(() => { chargerPromos(); chargerProduits(); }, []);
 
@@ -144,6 +144,61 @@ export default function AdminPromos() {
     await chargerPromos();
   }
 
+  async function envoyerPromoParEmail(promo) {
+    if (!confirm(`Envoyer ce code promo a tous les clients inscrits ?`)) return;
+    setEnvoi(promo.id);
+    try {
+      const clientsSnap = await getDocs(collection(db, "clients"));
+      const clients = clientsSnap.docs.map(d => d.data());
+
+      if (clients.length === 0) {
+        alert("Aucun client inscrit pour l'instant.");
+        setEnvoi(null);
+        return;
+      }
+
+      const reduction = promo.type === "pourcentage"
+        ? `${promo.valeur}% de reduction`
+        : `${Number(promo.valeur).toLocaleString("fr-SN")} FCFA de reduction`;
+
+      const portee = promo.portee === "produit"
+        ? `Produit : ${promo.produitNom}`
+        : "Toute la boutique";
+
+      const dateExp = promo.dateExpiration
+        ? new Date(promo.dateExpiration).toLocaleDateString("fr-SN", { day: "2-digit", month: "long", year: "numeric" })
+        : "Pas de date limite";
+
+      let envoyes = 0;
+      for (const client of clients) {
+        if (!client.email) continue;
+        try {
+          await emailjs.send(
+            "service_hucapuj",
+            "template_8bozs4b",
+            {
+              client_email: client.email,
+              client_prenom: client.prenom || "Client",
+              code_promo: promo.code,
+              reduction,
+              portee,
+              date_expiration: dateExp,
+            },
+            "GrsANLfPqrMFqvCHG"
+          );
+          envoyes++;
+        } catch (err) {
+          console.error("Erreur envoi email:", err);
+        }
+      }
+      alert(`Email envoye a ${envoyes} client(s) avec succes !`);
+    } catch (err) {
+      console.error(err);
+      alert("Erreur lors de l'envoi.");
+    }
+    setEnvoi(null);
+  }
+
   function formatDateExp(dateStr) {
     if (!dateStr) return null;
     return new Date(dateStr).toLocaleDateString("fr-SN", { day: "2-digit", month: "short", year: "numeric" });
@@ -180,13 +235,13 @@ export default function AdminPromos() {
                   <div key={p.id} className="bg-white rounded-xl border border-gray-200 p-4">
                     <div className="flex items-start justify-between gap-3 flex-wrap">
                       <div className="flex-1">
-                        <div className="flex items-center gap-3 flex-wrap mb-2">
+                        <div className="flex items-center gap-2 flex-wrap mb-2">
                           <p className="font-black text-2xl tracking-widest">{p.code}</p>
                           <span className={`text-xs font-bold px-2 py-1 rounded-full ${statut.color}`}>
                             {statut.label}
                           </span>
                           <span className={`text-xs font-bold px-2 py-1 rounded-full ${p.portee === "produit" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"}`}>
-                            {p.portee === "produit" ? `Produit : ${p.produitNom || "Specifique"}` : "Toute la boutique"}
+                            {p.portee === "produit" ? `Produit : ${p.produitNom}` : "Toute la boutique"}
                           </span>
                           <span className="bg-orange-100 text-orange-700 text-xs font-bold px-2 py-1 rounded-full">
                             1 fois par client
@@ -218,6 +273,12 @@ export default function AdminPromos() {
                           className={`text-xs font-semibold px-3 py-1.5 rounded-full transition ${p.actif ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}>
                           {p.actif ? "Desactiver" : "Activer"}
                         </button>
+                        <button
+                          onClick={() => envoyerPromoParEmail(p)}
+                          disabled={envoi === p.id}
+                          className="bg-blue-50 text-blue-600 px-3 py-1.5 rounded-full text-xs font-medium hover:bg-blue-100 disabled:opacity-50">
+                          {envoi === p.id ? "Envoi..." : "Envoyer par email"}
+                        </button>
                         <button onClick={() => handleDelete(p.id)}
                           className="bg-red-50 text-red-600 px-3 py-1.5 rounded-full text-xs font-medium hover:bg-red-100">
                           Supprimer
@@ -242,7 +303,6 @@ export default function AdminPromos() {
             </div>
             <form onSubmit={handleSave} className="space-y-4">
 
-              {/* Code */}
               <div>
                 <label className="text-sm text-gray-500 block mb-1">Code promo</label>
                 <input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value.toUpperCase() }))} required
@@ -250,7 +310,6 @@ export default function AdminPromos() {
                   placeholder="EX: PROMO20" />
               </div>
 
-              {/* Type reduction */}
               <div>
                 <label className="text-sm text-gray-500 block mb-1">Type de reduction</label>
                 <div className="flex gap-3">
@@ -265,15 +324,15 @@ export default function AdminPromos() {
                 </div>
               </div>
 
-              {/* Valeur */}
               <div>
-                <label className="text-sm text-gray-500 block mb-1">Valeur {form.type === "pourcentage" ? "(%)" : "(FCFA)"}</label>
+                <label className="text-sm text-gray-500 block mb-1">
+                  Valeur {form.type === "pourcentage" ? "(%)" : "(FCFA)"}
+                </label>
                 <input type="number" value={form.valeur} onChange={e => setForm(f => ({ ...f, valeur: e.target.value }))} required min="1"
                   className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400"
                   placeholder={form.type === "pourcentage" ? "20" : "5000"} />
               </div>
 
-              {/* Commande minimum */}
               <div>
                 <label className="text-sm text-gray-500 block mb-1">Commande minimum (FCFA) — optionnel</label>
                 <input type="number" value={form.minCommande} onChange={e => setForm(f => ({ ...f, minCommande: e.target.value }))}
@@ -281,7 +340,6 @@ export default function AdminPromos() {
                   placeholder="0" />
               </div>
 
-              {/* Date expiration */}
               <div>
                 <label className="text-sm text-gray-500 block mb-1">Date d'expiration — optionnel</label>
                 <input type="date" value={form.dateExpiration}
@@ -291,7 +349,6 @@ export default function AdminPromos() {
                 <p className="text-xs text-gray-400 mt-1">Laissez vide si pas de date limite</p>
               </div>
 
-              {/* Portee boutique ou produit */}
               <div>
                 <label className="text-sm text-gray-500 block mb-2">Ce code est valable pour :</label>
                 <div className="grid grid-cols-2 gap-3">
@@ -310,7 +367,6 @@ export default function AdminPromos() {
                 </div>
               </div>
 
-              {/* Selection produit */}
               {form.portee === "produit" && (
                 <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
                   <label className="text-sm font-bold text-purple-700 block mb-2">Choisir le produit</label>
@@ -326,12 +382,11 @@ export default function AdminPromos() {
                 </div>
               )}
 
-              {/* Info une fois par client — toujours active */}
               <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 flex items-center gap-3">
                 <span className="text-xl">🔒</span>
                 <div>
                   <p className="text-sm font-bold text-orange-700">Utilisable une seule fois par client</p>
-                  <p className="text-xs text-orange-500">Cette option est activee automatiquement pour tous les codes</p>
+                  <p className="text-xs text-orange-500">Cette option est activee automatiquement</p>
                 </div>
               </div>
 
