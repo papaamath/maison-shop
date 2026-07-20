@@ -6,6 +6,11 @@ import { useCart } from "../context/CartContext";
 import Navbar from "../components/Navbar";
 import { formatPrix } from "../utils/format";
 
+function formatDateFr(dateStr) {
+  if (!dateStr) return "";
+  return new Date(dateStr).toLocaleDateString("fr-SN", { day: "2-digit", month: "long", year: "numeric" });
+}
+
 export default function Product() {
   const { id } = useParams();
   const [produit, setProduit] = useState(null);
@@ -38,10 +43,10 @@ export default function Product() {
         setSimilaires(all);
 
         const avisSnap = await getDocs(collection(db, "produits", id, "avis"));
-        const avisData = avisSnap.docs
+        setAvis(avisSnap.docs
           .map(d => ({ id: d.id, ...d.data() }))
-          .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-        setAvis(avisData);
+          .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
+        );
       }
       setLoading(false);
     }
@@ -60,10 +65,7 @@ export default function Product() {
         createdAt: serverTimestamp(),
       });
       const snap = await getDocs(collection(db, "produits", id, "avis"));
-      setAvis(snap.docs
-        .map(d => ({ id: d.id, ...d.data() }))
-        .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
-      );
+      setAvis(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
       setAvisForm({ nom: "", note: 5, commentaire: "" });
       setShowAvisForm(false);
     } catch (err) { console.error(err); }
@@ -110,8 +112,7 @@ export default function Product() {
       <div className="flex flex-col items-center justify-center py-32 text-blue-900">
         <p className="text-5xl mb-4">😕</p>
         <p className="text-xl font-semibold mb-4">Produit introuvable</p>
-        <button onClick={() => navigate("/shop")}
-          className="bg-blue-950 text-white px-6 py-3 rounded-xl hover:bg-blue-900 transition">
+        <button onClick={() => navigate("/shop")} className="bg-blue-950 text-white px-6 py-3 rounded-xl hover:bg-blue-900 transition">
           Retour a la boutique
         </button>
       </div>
@@ -125,6 +126,8 @@ export default function Product() {
   const description = produit.description || produit.Description || "";
   const image = produit.image || produit.Image || "";
   const tailles = produit.tailles || [];
+  const estArrivage = produit.prochainArrivage && produit.dateArrivage;
+  const indisponible = estArrivage || stockDisponible === 0 || produit.rupture;
 
   return (
     <div className="min-h-screen bg-white">
@@ -148,24 +151,33 @@ export default function Product() {
 
           {/* Image */}
           <div>
-            <div className="bg-blue-50 rounded-3xl overflow-hidden aspect-square border border-blue-100 mb-4 shadow-sm">
+            <div className="bg-blue-50 rounded-3xl overflow-hidden aspect-square border border-blue-100 mb-4 shadow-sm relative">
               {image ? (
                 <img src={image} alt={nom} className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-8xl">📦</div>
               )}
+              {/* Badge arrivage sur l'image */}
+              {estArrivage && (
+                <div className="absolute top-4 left-4 bg-blue-600 text-white text-xs font-black px-3 py-1.5 rounded-full">
+                  Disponible le {formatDateFr(produit.dateArrivage)}
+                </div>
+              )}
             </div>
             <div className="flex gap-2 flex-wrap">
-              {stockDisponible > 0 && stockDisponible <= 5 && (
+              {estArrivage ? (
+                <span className="bg-blue-100 text-blue-700 text-xs font-bold px-3 py-1 rounded-full">
+                  Prochain arrivage — {formatDateFr(produit.dateArrivage)}
+                </span>
+              ) : stockDisponible > 0 && stockDisponible <= 5 ? (
                 <span className="bg-orange-100 text-orange-700 text-xs font-bold px-3 py-1 rounded-full">
                   Plus que {stockDisponible} en stock !
                 </span>
-              )}
-              {stockDisponible > 5 && (
+              ) : stockDisponible > 5 ? (
                 <span className="bg-green-100 text-green-700 text-xs font-bold px-3 py-1 rounded-full">
                   En stock
                 </span>
-              )}
+              ) : null}
               <span className="bg-blue-100 text-blue-800 text-xs font-bold px-3 py-1 rounded-full">
                 Livraison 24-48h
               </span>
@@ -179,30 +191,51 @@ export default function Product() {
           <div>
             <p className="text-xs text-orange-500 uppercase tracking-widest mb-2 font-bold">{categorie}</p>
             <h1 className="font-black text-4xl mb-4 leading-tight text-blue-950">{nom}</h1>
-
-            <div className="flex items-center gap-4 mb-6">
-              <p className="font-black text-4xl text-orange-500">{formatPrix(prix)}</p>
-            </div>
-
+            <p className="font-black text-4xl text-orange-500 mb-6">{formatPrix(prix)}</p>
             <p className="text-gray-600 leading-relaxed mb-6 text-sm">
               {description || "Aucune description disponible."}
             </p>
 
+            {/* Zone commande */}
             <div className="mb-6">
-              {stockDisponible === 0 ? (
+              {estArrivage ? (
+                /* Bloc arrivage */
+                <div className="bg-blue-50 border-2 border-blue-200 rounded-2xl p-6 text-center">
+                  <p className="text-3xl mb-3">📦</p>
+                  <p className="font-black text-blue-900 text-xl mb-1">Prochain arrivage</p>
+                  <p className="text-blue-700 font-bold text-lg mb-2">
+                    Disponible le {formatDateFr(produit.dateArrivage)}
+                  </p>
+                  {produit.stockArrivage && (
+                    <p className="text-blue-500 text-sm mb-4">
+                      {produit.stockArrivage} unites prevues
+                    </p>
+                  )}
+                  <div className="bg-white border border-blue-200 rounded-xl p-3">
+                    <p className="text-blue-600 text-sm font-medium">
+                      Revenez le {formatDateFr(produit.dateArrivage)} pour commander !
+                    </p>
+                    <a href={`https://wa.me/221768730731?text=${encodeURIComponent(`Bonjour, je suis interesse par ${nom} qui arrive le ${formatDateFr(produit.dateArrivage)}. Pouvez-vous me prevenir ?`)}`}
+                      target="_blank" rel="noreferrer"
+                      className="mt-3 inline-block bg-green-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-green-700 transition">
+                      Me prevenir sur WhatsApp
+                    </a>
+                  </div>
+                </div>
+              ) : stockDisponible === 0 || produit.rupture ? (
+                /* Rupture de stock */
                 <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4 text-center">
                   <p className="text-orange-600 font-semibold">Produit en rupture de stock</p>
                   <p className="text-orange-400 text-sm mt-1">Revenez bientot !</p>
                 </div>
               ) : (
+                /* Disponible — commande normale */
                 <>
-                  {/* Tailles / Pointures */}
+                  {/* Tailles */}
                   {tailles.length > 0 && (
                     <div className="mb-5">
                       <div className="flex items-center justify-between mb-2">
-                        <p className="text-sm font-bold text-blue-900">
-                          Pointure / Taille :
-                        </p>
+                        <p className="text-sm font-bold text-blue-900">Pointure / Taille :</p>
                         {tailleChoisie && (
                           <span className="bg-orange-500 text-white text-sm font-black px-3 py-1 rounded-full">
                             {tailleChoisie}
@@ -211,16 +244,13 @@ export default function Product() {
                       </div>
                       <div className="flex gap-2 flex-wrap">
                         {tailles.map(taille => (
-                          <button
-                            key={taille}
-                            type="button"
+                          <button key={taille} type="button"
                             onClick={() => { setTailleChoisie(taille); setErreurTaille(false); }}
                             className={`px-4 py-2.5 rounded-xl text-sm font-bold border-2 transition ${
                               tailleChoisie === taille
                                 ? "border-orange-500 bg-orange-500 text-white shadow-md"
                                 : "border-gray-200 bg-white text-gray-700 hover:border-orange-300 hover:bg-orange-50"
-                            }`}
-                          >
+                            }`}>
                             {taille}
                           </button>
                         ))}
@@ -240,22 +270,18 @@ export default function Product() {
                     <span className="text-sm text-blue-900 font-medium">Quantite :</span>
                     <div className="flex items-center border border-blue-100 rounded-xl overflow-hidden">
                       <button onClick={() => setQty(q => Math.max(1, q - 1))}
-                        className="px-5 py-3 bg-blue-50 hover:bg-blue-100 text-xl font-bold transition text-blue-950">
-                        -
-                      </button>
+                        className="px-5 py-3 bg-blue-50 hover:bg-blue-100 text-xl font-bold transition text-blue-950">-</button>
                       <span className="px-6 py-3 font-bold text-lg min-w-16 text-center">{qty}</span>
                       <button onClick={() => setQty(q => Math.min(stockDisponible, q + 1))}
-                        className="px-5 py-3 bg-blue-50 hover:bg-blue-100 text-xl font-bold transition text-blue-950">
-                        +
-                      </button>
+                        className="px-5 py-3 bg-blue-50 hover:bg-blue-100 text-xl font-bold transition text-blue-950">+</button>
                     </div>
                     <span className="text-xs text-gray-400">{stockDisponible} disponibles</span>
                   </div>
 
-                  {/* Boutons commande */}
+                  {/* Boutons */}
                   <div className="flex flex-col gap-3">
                     <button onClick={handleAjout}
-                      className="w-full bg-blue-950 text-white py-4 rounded-xl font-bold text-lg hover:bg-blue-900 transition flex items-center justify-center gap-2 shadow-lg">
+                      className="w-full bg-blue-950 text-white py-4 rounded-xl font-bold text-lg hover:bg-blue-900 transition shadow-lg">
                       Ajouter au panier — {formatPrix(prix * qty)}
                     </button>
                     <button onClick={() => { handleAjout(); navigate("/checkout"); }}
@@ -315,16 +341,14 @@ export default function Product() {
         <div className="mb-16">
           {onglet === "description" && (
             <div className="max-w-2xl">
-              <p className="text-gray-600 leading-relaxed">
-                {description || "Aucune description disponible pour ce produit."}
-              </p>
+              <p className="text-gray-600 leading-relaxed">{description || "Aucune description disponible."}</p>
             </div>
           )}
 
           {onglet === "avis" && (
             <div className="max-w-2xl">
               {avis.length > 0 && (
-                <div className="bg-gray-50 rounded-2xl p-6 mb-6 flex items-center gap-6">
+                <div className="bg-gray-50 rounded-2xl p-6 mb-6">
                   <div className="text-center">
                     <p className="font-black text-5xl text-gray-900">
                       {(avis.reduce((a, v) => a + v.note, 0) / avis.length).toFixed(1)}
@@ -338,39 +362,33 @@ export default function Product() {
                   </div>
                 </div>
               )}
-
               {!showAvisForm && (
                 <button onClick={() => setShowAvisForm(true)}
                   className="mb-6 bg-blue-950 text-white px-6 py-3 rounded-xl font-medium hover:bg-blue-900 transition">
                   Laisser un avis
                 </button>
               )}
-
               {showAvisForm && (
                 <form onSubmit={soumettreAvis} className="bg-gray-50 rounded-2xl p-6 mb-6 space-y-4">
                   <h3 className="font-bold text-lg">Votre avis</h3>
                   <div>
                     <label className="text-sm text-gray-500 block mb-1">Votre nom</label>
                     <input value={avisForm.nom} onChange={e => setAvisForm(f => ({ ...f, nom: e.target.value }))} required
-                      className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none bg-white"
-                      placeholder="Mamadou D." />
+                      className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none bg-white" placeholder="Mamadou D." />
                   </div>
                   <div>
                     <label className="text-sm text-gray-500 block mb-2">Note</label>
                     <div className="flex gap-2">
                       {[1,2,3,4,5].map(s => (
                         <button key={s} type="button" onClick={() => setAvisForm(f => ({ ...f, note: s }))}
-                          className={`text-3xl transition ${s <= avisForm.note ? "text-yellow-400" : "text-gray-200 hover:text-yellow-300"}`}>
-                          ★
-                        </button>
+                          className={`text-3xl transition ${s <= avisForm.note ? "text-yellow-400" : "text-gray-200 hover:text-yellow-300"}`}>★</button>
                       ))}
                     </div>
                   </div>
                   <div>
                     <label className="text-sm text-gray-500 block mb-1">Commentaire</label>
                     <textarea value={avisForm.commentaire} onChange={e => setAvisForm(f => ({ ...f, commentaire: e.target.value }))} required
-                      rows={3}
-                      className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none bg-white resize-none"
+                      rows={3} className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none bg-white resize-none"
                       placeholder="Partagez votre experience..." />
                   </div>
                   <div className="flex gap-3">
@@ -383,12 +401,10 @@ export default function Product() {
                   </div>
                 </form>
               )}
-
               {avis.length === 0 ? (
                 <div className="text-center py-12 text-gray-400">
                   <p className="text-4xl mb-3">💬</p>
                   <p className="font-semibold">Aucun avis pour l'instant</p>
-                  <p className="text-sm mt-1">Soyez le premier a donner votre avis !</p>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -438,11 +454,16 @@ export default function Product() {
               {similaires.map(p => (
                 <div key={p.id} onClick={() => navigate(`/product/${p.id}`)}
                   className="bg-white rounded-2xl border border-blue-100 overflow-hidden hover:-translate-y-1 transition-transform cursor-pointer shadow-sm hover:shadow-xl">
-                  <div className="h-40 bg-blue-50 overflow-hidden">
+                  <div className="h-40 bg-blue-50 overflow-hidden relative">
                     {(p.image || p.Image) ? (
                       <img src={p.image || p.Image} alt={p.nom || p.Nom} className="w-full h-full object-cover" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-4xl">📦</div>
+                    )}
+                    {p.prochainArrivage && (
+                      <div className="absolute bottom-0 left-0 right-0 bg-blue-600 text-white text-xs font-bold px-2 py-1 text-center">
+                        Arrivage {formatDateFr(p.dateArrivage)}
+                      </div>
                     )}
                   </div>
                   <div className="p-3">

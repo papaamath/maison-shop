@@ -16,6 +16,9 @@ const FORM_VIDE = {
   image: "",
   rupture: false,
   tailles: "",
+  prochainArrivage: false,
+  dateArrivage: "",
+  stockArrivage: "",
 };
 
 const NAV_LINKS = [
@@ -74,6 +77,28 @@ function MobileNav({ open, setOpen }) {
   );
 }
 
+function formatDateFr(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  return d.toLocaleDateString("fr-SN", { day: "2-digit", month: "long", year: "numeric" });
+}
+
+function verifierEtDebloquerArrivage(produit) {
+  if (!produit.prochainArrivage || !produit.dateArrivage) return null;
+  const dateArrivage = new Date(produit.dateArrivage);
+  const maintenant = new Date();
+  if (maintenant >= dateArrivage) {
+    return {
+      stock: Number(produit.stockArrivage || 0),
+      prochainArrivage: false,
+      dateArrivage: null,
+      stockArrivage: null,
+      rupture: false,
+    };
+  }
+  return null;
+}
+
 export default function AdminProducts() {
   const [produits, setProduits] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -87,7 +112,18 @@ export default function AdminProducts() {
 
   async function chargerProduits() {
     const snap = await getDocs(collection(db, "produits"));
-    setProduits(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // Verifie et debloque automatiquement les arrivages
+    for (const p of data) {
+      const mise_a_jour = verifierEtDebloquerArrivage(p);
+      if (mise_a_jour) {
+        await updateDoc(doc(db, "produits", p.id), mise_a_jour);
+      }
+    }
+
+    const snapMaj = await getDocs(collection(db, "produits"));
+    setProduits(snapMaj.docs.map(d => ({ id: d.id, ...d.data() })));
     setLoading(false);
   }
 
@@ -108,6 +144,9 @@ export default function AdminProducts() {
       image: p.image || "",
       rupture: p.rupture || Number(p.stock) === 0,
       tailles: p.tailles ? p.tailles.join(", ") : "",
+      prochainArrivage: p.prochainArrivage || false,
+      dateArrivage: p.dateArrivage || "",
+      stockArrivage: p.stockArrivage || "",
     });
     setShowForm(true);
   }
@@ -120,12 +159,15 @@ export default function AdminProducts() {
       prix: Number(form.prix),
       categorie: form.categorie,
       description: form.description,
-      stock: form.rupture ? 0 : Number(form.stock),
+      stock: form.prochainArrivage ? 0 : (form.rupture ? 0 : Number(form.stock)),
       image: form.image,
-      rupture: form.rupture,
+      rupture: form.prochainArrivage ? true : form.rupture,
       tailles: form.tailles
         ? form.tailles.split(",").map(t => t.trim()).filter(t => t)
         : [],
+      prochainArrivage: form.prochainArrivage,
+      dateArrivage: form.prochainArrivage ? form.dateArrivage : null,
+      stockArrivage: form.prochainArrivage ? Number(form.stockArrivage) : null,
     };
     try {
       if (editing) await updateDoc(doc(db, "produits", editing), data);
@@ -188,6 +230,7 @@ export default function AdminProducts() {
                         <div>
                           <p className="font-bold text-sm">{p.nom}</p>
                           <p className="text-gray-400 text-xs">{p.categorie}</p>
+                          {/* Tailles */}
                           {p.tailles && p.tailles.length > 0 && (
                             <div className="flex gap-1 flex-wrap mt-1">
                               {p.tailles.map(t => (
@@ -197,11 +240,19 @@ export default function AdminProducts() {
                               ))}
                             </div>
                           )}
+                          {/* Badge arrivage */}
+                          {p.prochainArrivage && p.dateArrivage && (
+                            <div className="mt-1 bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full inline-flex items-center gap-1 font-medium">
+                              Arrivage le {formatDateFr(p.dateArrivage)} — {p.stockArrivage} unites prevues
+                            </div>
+                          )}
                         </div>
                         <p className="font-black text-sm text-gray-900 flex-shrink-0">{formatPrix(Number(p.prix || 0))}</p>
                       </div>
                       <div className="flex items-center justify-between mt-2">
-                        {p.rupture || Number(p.stock) === 0 ? (
+                        {p.prochainArrivage ? (
+                          <span className="text-blue-600 text-xs font-bold">Prochain arrivage</span>
+                        ) : p.rupture || Number(p.stock) === 0 ? (
                           <span className="text-red-500 text-xs font-bold">Rupture de stock</span>
                         ) : (
                           <span className={`text-xs font-medium ${Number(p.stock) <= 5 ? "text-orange-500" : "text-green-600"}`}>
@@ -213,10 +264,12 @@ export default function AdminProducts() {
                             className="bg-gray-100 text-gray-700 px-3 py-1 rounded-lg text-xs font-medium hover:bg-gray-200">
                             Editer
                           </button>
-                          <button onClick={() => toggleRupture(p)}
-                            className={`px-3 py-1 rounded-lg text-xs font-medium ${p.rupture || Number(p.stock) === 0 ? "bg-green-50 text-green-600" : "bg-orange-50 text-orange-600"}`}>
-                            {p.rupture || Number(p.stock) === 0 ? "Reappro" : "Rupture"}
-                          </button>
+                          {!p.prochainArrivage && (
+                            <button onClick={() => toggleRupture(p)}
+                              className={`px-3 py-1 rounded-lg text-xs font-medium ${p.rupture || Number(p.stock) === 0 ? "bg-green-50 text-green-600" : "bg-orange-50 text-orange-600"}`}>
+                              {p.rupture || Number(p.stock) === 0 ? "Reappro" : "Rupture"}
+                            </button>
+                          )}
                           <button onClick={() => handleDelete(p.id)}
                             className="bg-red-50 text-red-600 px-3 py-1 rounded-lg text-xs font-medium hover:bg-red-100">
                             Suppr
@@ -258,24 +311,66 @@ export default function AdminProducts() {
                 </div>
                 <div>
                   <label className="text-sm text-gray-500 block mb-1">
-                    Stock {form.rupture && <span className="text-red-500">(rupture)</span>}
+                    Stock {(form.rupture || form.prochainArrivage) && <span className="text-red-500">(indisponible)</span>}
                   </label>
-                  <input type="number" value={form.rupture ? "" : form.stock}
+                  <input type="number" value={(form.rupture || form.prochainArrivage) ? "" : form.stock}
                     onChange={e => setForm(f => ({ ...f, stock: e.target.value }))}
-                    disabled={form.rupture} required={!form.rupture}
-                    className={`w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400 ${form.rupture ? "bg-gray-100 cursor-not-allowed" : ""}`}
+                    disabled={form.rupture || form.prochainArrivage}
+                    required={!form.rupture && !form.prochainArrivage}
+                    className={`w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400 ${(form.rupture || form.prochainArrivage) ? "bg-gray-100 cursor-not-allowed" : ""}`}
                     placeholder="10" />
                 </div>
               </div>
 
               {/* Rupture de stock */}
-              <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl p-3">
-                <input type="checkbox" id="rupture" checked={form.rupture}
-                  onChange={e => setForm(f => ({ ...f, rupture: e.target.checked, stock: e.target.checked ? "" : f.stock }))}
-                  className="w-4 h-4 mt-0.5 accent-red-600" />
-                <label htmlFor="rupture" className="text-sm font-bold text-red-700 cursor-pointer">
-                  Mettre en rupture de stock
-                </label>
+              {!form.prochainArrivage && (
+                <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl p-3">
+                  <input type="checkbox" id="rupture" checked={form.rupture}
+                    onChange={e => setForm(f => ({ ...f, rupture: e.target.checked, stock: e.target.checked ? "" : f.stock }))}
+                    className="w-4 h-4 mt-0.5 accent-red-600" />
+                  <label htmlFor="rupture" className="text-sm font-bold text-red-700 cursor-pointer">
+                    Mettre en rupture de stock
+                  </label>
+                </div>
+              )}
+
+              {/* Prochain arrivage */}
+              <div className={`border rounded-xl p-4 space-y-3 ${form.prochainArrivage ? "bg-blue-50 border-blue-200" : "bg-gray-50 border-gray-200"}`}>
+                <div className="flex items-start gap-3">
+                  <input type="checkbox" id="arrivage" checked={form.prochainArrivage}
+                    onChange={e => setForm(f => ({ ...f, prochainArrivage: e.target.checked, rupture: false, stock: e.target.checked ? "" : f.stock }))}
+                    className="w-4 h-4 mt-0.5 accent-blue-600" />
+                  <div>
+                    <label htmlFor="arrivage" className="text-sm font-bold text-blue-700 cursor-pointer">
+                      Prochain arrivage
+                    </label>
+                    <p className="text-xs text-blue-500 mt-0.5">
+                      Le produit sera visible mais non commandable jusqu'a la date d'arrivage
+                    </p>
+                  </div>
+                </div>
+
+                {form.prochainArrivage && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-sm text-blue-700 font-medium block mb-1">Date d'arrivage</label>
+                      <input type="date" value={form.dateArrivage}
+                        onChange={e => setForm(f => ({ ...f, dateArrivage: e.target.value }))}
+                        required={form.prochainArrivage}
+                        min={new Date().toISOString().split("T")[0]}
+                        className="w-full border border-blue-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400 bg-white" />
+                    </div>
+                    <div>
+                      <label className="text-sm text-blue-700 font-medium block mb-1">Quantite prevue</label>
+                      <input type="number" value={form.stockArrivage}
+                        onChange={e => setForm(f => ({ ...f, stockArrivage: e.target.value }))}
+                        required={form.prochainArrivage}
+                        min="1"
+                        className="w-full border border-blue-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400 bg-white"
+                        placeholder="20" />
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -294,7 +389,7 @@ export default function AdminProducts() {
                   placeholder="Description du produit..." />
               </div>
 
-              {/* Tailles / Pointures */}
+              {/* Tailles */}
               <div>
                 <label className="text-sm text-gray-500 block mb-1">
                   Tailles / Pointures disponibles
@@ -304,16 +399,11 @@ export default function AdminProducts() {
                   onChange={e => setForm(f => ({ ...f, tailles: e.target.value }))}
                   className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400"
                   placeholder="Ex: 38, 39, 40, 41, 42, 43" />
-                <p className="text-xs text-gray-400 mt-1">
-                  Separez par des virgules. Laissez vide si pas de tailles.
-                </p>
-                {/* Preview tailles */}
+                <p className="text-xs text-gray-400 mt-1">Separez par des virgules. Laissez vide si pas de tailles.</p>
                 {form.tailles && (
                   <div className="flex gap-2 flex-wrap mt-2">
                     {form.tailles.split(",").map(t => t.trim()).filter(t => t).map(t => (
-                      <span key={t} className="bg-orange-100 text-orange-700 text-xs px-2 py-1 rounded-lg font-bold">
-                        {t}
-                      </span>
+                      <span key={t} className="bg-orange-100 text-orange-700 text-xs px-2 py-1 rounded-lg font-bold">{t}</span>
                     ))}
                   </div>
                 )}
