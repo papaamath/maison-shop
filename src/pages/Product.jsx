@@ -18,6 +18,8 @@ export default function Product() {
   const [showAvisForm, setShowAvisForm] = useState(false);
   const [avisForm, setAvisForm] = useState({ nom: "", note: 5, commentaire: "" });
   const [avisLoading, setAvisLoading] = useState(false);
+  const [tailleChoisie, setTailleChoisie] = useState(null);
+  const [erreurTaille, setErreurTaille] = useState(false);
   const { addToCart } = useCart();
   const navigate = useNavigate();
 
@@ -64,21 +66,24 @@ export default function Product() {
       );
       setAvisForm({ nom: "", note: 5, commentaire: "" });
       setShowAvisForm(false);
-    } catch (err) {
-      console.error(err);
-    }
+    } catch (err) { console.error(err); }
     setAvisLoading(false);
   }
 
   function handleAjout() {
-    for (let i = 0; i < qty; i++) addToCart(produit);
+    const tailles = produit.tailles || [];
+    if (tailles.length > 0 && !tailleChoisie) {
+      setErreurTaille(true);
+      return;
+    }
+    setErreurTaille(false);
+    for (let i = 0; i < qty; i++) addToCart({ ...produit, tailleChoisie });
     setToast(true);
     setTimeout(() => setToast(false), 2500);
   }
 
   function partagerWhatsApp() {
-    const url = window.location.href;
-    const msg = `Regarde ce produit sur B2S-STORE : ${nom} - ${formatPrix(prix)} 👉 ${url}`;
+    const msg = `Regarde ce produit sur B2S-STORE : ${nom} - ${formatPrix(prix)} 👉 ${window.location.href}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank");
   }
 
@@ -105,7 +110,8 @@ export default function Product() {
       <div className="flex flex-col items-center justify-center py-32 text-blue-900">
         <p className="text-5xl mb-4">😕</p>
         <p className="text-xl font-semibold mb-4">Produit introuvable</p>
-        <button onClick={() => navigate("/shop")} className="bg-blue-950 text-white px-6 py-3 rounded-xl hover:bg-blue-900 transition">
+        <button onClick={() => navigate("/shop")}
+          className="bg-blue-950 text-white px-6 py-3 rounded-xl hover:bg-blue-900 transition">
           Retour a la boutique
         </button>
       </div>
@@ -118,6 +124,7 @@ export default function Product() {
   const categorie = produit.categorie || produit.Cathegorie || "";
   const description = produit.description || produit.Description || "";
   const image = produit.image || produit.Image || "";
+  const tailles = produit.tailles || [];
 
   return (
     <div className="min-h-screen bg-white">
@@ -168,7 +175,7 @@ export default function Product() {
             </div>
           </div>
 
-          {/* Infos */}
+          {/* Infos produit */}
           <div>
             <p className="text-xs text-orange-500 uppercase tracking-widest mb-2 font-bold">{categorie}</p>
             <h1 className="font-black text-4xl mb-4 leading-tight text-blue-950">{nom}</h1>
@@ -189,6 +196,45 @@ export default function Product() {
                 </div>
               ) : (
                 <>
+                  {/* Tailles / Pointures */}
+                  {tailles.length > 0 && (
+                    <div className="mb-5">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-sm font-bold text-blue-900">
+                          Pointure / Taille :
+                        </p>
+                        {tailleChoisie && (
+                          <span className="bg-orange-500 text-white text-sm font-black px-3 py-1 rounded-full">
+                            {tailleChoisie}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex gap-2 flex-wrap">
+                        {tailles.map(taille => (
+                          <button
+                            key={taille}
+                            type="button"
+                            onClick={() => { setTailleChoisie(taille); setErreurTaille(false); }}
+                            className={`px-4 py-2.5 rounded-xl text-sm font-bold border-2 transition ${
+                              tailleChoisie === taille
+                                ? "border-orange-500 bg-orange-500 text-white shadow-md"
+                                : "border-gray-200 bg-white text-gray-700 hover:border-orange-300 hover:bg-orange-50"
+                            }`}
+                          >
+                            {taille}
+                          </button>
+                        ))}
+                      </div>
+                      {erreurTaille && (
+                        <div className="mt-2 bg-red-50 border border-red-200 rounded-xl px-4 py-2">
+                          <p className="text-red-600 text-xs font-bold">
+                            Veuillez choisir une pointure avant d'ajouter au panier !
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Quantite */}
                   <div className="flex items-center gap-4 mb-4">
                     <span className="text-sm text-blue-900 font-medium">Quantite :</span>
@@ -206,7 +252,7 @@ export default function Product() {
                     <span className="text-xs text-gray-400">{stockDisponible} disponibles</span>
                   </div>
 
-                  {/* Boutons */}
+                  {/* Boutons commande */}
                   <div className="flex flex-col gap-3">
                     <button onClick={handleAjout}
                       className="w-full bg-blue-950 text-white py-4 rounded-xl font-bold text-lg hover:bg-blue-900 transition flex items-center justify-center gap-2 shadow-lg">
@@ -329,11 +375,9 @@ export default function Product() {
                   </div>
                   <div className="flex gap-3">
                     <button type="button" onClick={() => setShowAvisForm(false)}
-                      className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-lg font-medium hover:bg-gray-100 transition">
-                      Annuler
-                    </button>
+                      className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-lg font-medium">Annuler</button>
                     <button type="submit" disabled={avisLoading}
-                      className="flex-1 bg-blue-950 text-white py-2.5 rounded-lg font-medium hover:bg-blue-900 transition disabled:opacity-50">
+                      className="flex-1 bg-blue-950 text-white py-2.5 rounded-lg font-medium disabled:opacity-50">
                       {avisLoading ? "Envoi..." : "Publier l'avis"}
                     </button>
                   </div>
@@ -415,7 +459,7 @@ export default function Product() {
       {/* Toast */}
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-blue-950 text-white px-6 py-3 rounded-xl text-sm font-medium z-50 shadow-lg flex items-center gap-2">
-          {nom} ajoute au panier !
+          {nom} {tailleChoisie ? `(${tailleChoisie})` : ""} ajoute au panier !
           <button onClick={() => navigate("/checkout")}
             className="bg-orange-500 text-white px-3 py-1 rounded-lg text-xs ml-2 hover:bg-orange-600 transition">
             Voir le panier
