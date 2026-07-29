@@ -21,6 +21,7 @@ import AdminPromos from "./pages/admin/Promos";
 import Contact from "./pages/Contact";
 import Caisse from "./pages/admin/Caisse"
 import Associes from "./pages/admin/Associes";
+import Journal from "./pages/admin/Journal";
 export default function App() {
   return (
     <AuthProvider>
@@ -48,6 +49,7 @@ export default function App() {
             <Route path="/contact" element={<Contact />} />
             <Route path="/admin/caisse" element={<ProtectedRoute><Caisse /></ProtectedRoute>} />
             <Route path="/admin/associes" element={<ProtectedRoute><Associes /></ProtectedRoute>} />
+            <Route path="/admin/journal" element={<ProtectedRoute><Journal /></ProtectedRoute>} />
             
           </Routes>
         </BrowserRouter>
