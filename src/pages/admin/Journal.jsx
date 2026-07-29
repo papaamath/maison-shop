@@ -68,13 +68,27 @@ function MobileNav({ open, setOpen }) {
   );
 }
 
+// Nettoie les caracteres speciaux ET formate les chiffres correctement
 function clean(str) {
-  if (!str) return "";
+  if (!str && str !== 0) return "";
   return String(str)
     .replace(/[éèêë]/g, "e").replace(/[àâä]/g, "a").replace(/[ùûü]/g, "u")
     .replace(/[îï]/g, "i").replace(/[ôö]/g, "o").replace(/ç/g, "c")
     .replace(/[ÉÈÊË]/g, "E").replace(/[ÀÂÄ]/g, "A").replace(/[ÙÛÜ]/g, "U")
-    .replace(/[ÎÏ]/g, "I").replace(/[ÔÖ]/g, "O").replace(/Ç/g, "C");
+    .replace(/[ÎÏ]/g, "I").replace(/[ÔÖ]/g, "O").replace(/Ç/g, "C")
+    .replace(/'/g, "'").replace(/'/g, "'").replace(/«|»/g, '"');
+}
+
+// Formate les montants sans separateur de milliers problematique
+function montantPDF(valeur) {
+  const n = Number(valeur || 0);
+  // Utilise un espace normal comme separateur de milliers
+  return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " FCFA";
+}
+
+function formatDate(ts) {
+  if (!ts?.seconds) return "-";
+  return new Date(ts.seconds * 1000).toLocaleDateString("fr-SN", { day: "2-digit", month: "short" });
 }
 
 export default function Journal() {
@@ -103,12 +117,6 @@ export default function Journal() {
     return d.getMonth() === mois && d.getFullYear() === annee;
   }
 
-  function formatDate(ts) {
-    if (!ts?.seconds) return "-";
-    return new Date(ts.seconds * 1000).toLocaleDateString("fr-SN", { day: "2-digit", month: "short" });
-  }
-
-  // Filtrer par mois selectionne
   const commandesDuMois = commandes.filter(c =>
     estDansMois(c.createdAt, moisSelectionne, anneeSelectionnee) && c.statut !== "Annule"
   );
@@ -120,7 +128,6 @@ export default function Journal() {
   const totalDepenses = depensesDuMois.reduce((a, d) => a + Number(d.montant || 0), 0);
   const benefice = totalVentes - totalDepenses;
 
-  // Top produits du mois
   const ventesParProduit = {};
   commandesDuMois.forEach(cmd => {
     cmd.articles?.forEach(a => {
@@ -131,201 +138,277 @@ export default function Journal() {
   });
   const topProduits = Object.values(ventesParProduit).sort((a, b) => b.total - a.total);
 
-  // Annees disponibles
   const annees = [...new Set([
     ...commandes.map(c => c.createdAt?.seconds ? new Date(c.createdAt.seconds * 1000).getFullYear() : null),
     ...depenses.map(d => d.createdAt?.seconds ? new Date(d.createdAt.seconds * 1000).getFullYear() : null),
     new Date().getFullYear(),
   ].filter(Boolean))].sort((a, b) => b - a);
 
-  function genererPDF() {
-    const doc = new jsPDF();
+  async function genererPDF() {
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
     const noir = [26, 26, 24];
-    const grisClair = [245, 244, 240];
-    const vert = [59, 109, 17];
-    const rouge = [200, 75, 49];
+    const gris = [245, 244, 240];
+    const vert = [34, 139, 34];
+    const rouge = [180, 30, 30];
+    const bleu = [30, 80, 160];
 
-    // Header
+    // ===== PAGE 1 : HEADER =====
     doc.setFillColor(...noir);
-    doc.rect(0, 0, 210, 45, "F");
+    doc.rect(0, 0, 210, 48, "F");
 
     // Logo
     try {
-      doc.addImage("https://res.cloudinary.com/dy2tgofmf/image/upload/logo_k9rogt", "JPEG", 12, 8, 28, 28);
+      const logoUrl = "https://res.cloudinary.com/dy2tgofmf/image/upload/logo_k9rogt";
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = logoUrl;
+      });
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      const imgData = canvas.toDataURL("image/jpeg");
+      doc.addImage(imgData, "JPEG", 12, 8, 28, 28);
     } catch {}
 
     doc.setTextColor(255, 255, 255);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(20);
+    doc.setFontSize(18);
     doc.text("B2S-STORE", 46, 22);
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
+    doc.setFontSize(8);
     doc.text("Mbed Fass Yeumbeul, Dakar, Senegal", 46, 30);
     doc.text("+221 76 873 07 31  |  syllaissa875@gmail.com", 46, 37);
 
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(16);
-    doc.text("JOURNAL MENSUEL", 195, 20, { align: "right" });
+    doc.setFontSize(15);
+    doc.text("JOURNAL MENSUEL", 198, 20, { align: "right" });
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
-    doc.text(`${MOIS[moisSelectionne]} ${anneeSelectionnee}`, 195, 30, { align: "right" });
+    doc.text(`${MOIS[moisSelectionne]} ${anneeSelectionnee}`, 198, 30, { align: "right" });
 
-    // Resume financier
-    doc.setFillColor(...grisClair);
-    doc.rect(0, 50, 210, 40, "F");
+    // ===== RESUME FINANCIER =====
+    doc.setFillColor(...gris);
+    doc.rect(0, 52, 210, 35, "F");
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    doc.setTextColor(100, 100, 100);
-    doc.text("RECETTES", 20, 62);
-    doc.text("DEPENSES", 80, 62);
-    doc.text("BENEFICE NET", 145, 62);
+    const cols = [
+      { label: "RECETTES", valeur: totalVentes, color: vert, x: 35 },
+      { label: "DEPENSES", valeur: totalDepenses, color: rouge, x: 105 },
+      { label: "BENEFICE NET", valeur: benefice, color: benefice >= 0 ? bleu : rouge, x: 175 },
+    ];
 
-    doc.setFontSize(14);
-    doc.setTextColor(...vert);
-    doc.text(`${totalVentes.toLocaleString("fr-SN")} FCFA`, 20, 75);
+    cols.forEach(c => {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(120, 120, 120);
+      doc.text(c.label, c.x, 62, { align: "center" });
 
-    doc.setTextColor(...rouge);
-    doc.text(`${totalDepenses.toLocaleString("fr-SN")} FCFA`, 80, 75);
-
-    doc.setTextColor(benefice >= 0 ? vert[0] : rouge[0], benefice >= 0 ? vert[1] : rouge[1], benefice >= 0 ? vert[2] : rouge[2]);
-    doc.text(`${benefice >= 0 ? "+" : ""}${benefice.toLocaleString("fr-SN")} FCFA`, 145, 75);
-
-    let y = 100;
-
-    // Tableau ventes
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.setTextColor(...noir);
-    doc.text(`Ventes du mois (${commandesDuMois.length} commandes)`, 15, y);
-    y += 5;
-
-    autoTable(doc, {
-      startY: y,
-      head: [["Date", "Client", "Articles", "Total"]],
-      body: commandesDuMois.map(c => [
-        formatDate(c.createdAt),
-        clean(`${c.client?.prenom || ""} ${c.client?.nom || ""}`),
-        (c.articles || []).map(a => `${clean(a.nom)} x${a.quantite}`).join(", "),
-        `${Number(c.total || 0).toLocaleString("fr-SN")} FCFA`,
-      ]),
-      headStyles: { fillColor: noir, textColor: [255,255,255], fontStyle: "bold", fontSize: 8, cellPadding: 4 },
-      bodyStyles: { fontSize: 8, cellPadding: 4, textColor: noir },
-      alternateRowStyles: { fillColor: [250, 250, 248] },
-      columnStyles: {
-        0: { cellWidth: 20 },
-        1: { cellWidth: 40 },
-        2: { cellWidth: 90 },
-        3: { cellWidth: 40, halign: "right" },
-      },
-      margin: { left: 15, right: 15 },
-      styles: { lineColor: [230, 228, 224], lineWidth: 0.1 },
-      foot: [[
-        "", "", "TOTAL VENTES",
-        { content: `${totalVentes.toLocaleString("fr-SN")} FCFA`, styles: { fontStyle: "bold", textColor: vert, halign: "right" } }
-      ]],
-      footStyles: { fillColor: [240, 255, 240], textColor: vert, fontStyle: "bold", fontSize: 9 },
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(...c.color);
+      const prefix = c.label === "BENEFICE NET" ? (benefice >= 0 ? "+" : "") : "";
+      doc.text(`${prefix}${montantPDF(c.valeur)}`, c.x, 76, { align: "center" });
     });
 
-    y = doc.lastAutoTable.finalY + 15;
+    // ===== TABLEAU VENTES =====
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(...noir);
+    doc.text(`Ventes du mois (${commandesDuMois.length} commandes)`, 15, 98);
 
-    // Tableau depenses
+    autoTable(doc, {
+      startY: 102,
+      head: [["Date", "Client", "Articles", "Total"]],
+      body: commandesDuMois.map(c => [
+        clean(formatDate(c.createdAt)),
+        clean(`${c.client?.prenom || ""} ${c.client?.nom || ""}`),
+        clean((c.articles || []).map(a => `${a.nom} x${a.quantite}`).join(", ")),
+        montantPDF(c.total),
+      ]),
+      headStyles: {
+        fillColor: noir,
+        textColor: [255, 255, 255],
+        fontStyle: "bold",
+        fontSize: 8,
+        cellPadding: 3,
+      },
+      bodyStyles: {
+        fontSize: 7,
+        cellPadding: 2.5,
+        textColor: noir,
+        overflow: "linebreak",
+      },
+      alternateRowStyles: { fillColor: [250, 250, 248] },
+      columnStyles: {
+        0: { cellWidth: 16 },
+        1: { cellWidth: 32 },
+        2: { cellWidth: 100 },
+        3: { cellWidth: 32, halign: "right" },
+      },
+      margin: { left: 10, right: 10 },
+      styles: { lineColor: [220, 220, 220], lineWidth: 0.1, overflow: "linebreak" },
+      showFoot: "lastPage",
+      foot: [[
+        { content: "", colSpan: 2 },
+        { content: "TOTAL VENTES", styles: { fontStyle: "bold", fillColor: [220, 255, 220] } },
+        { content: montantPDF(totalVentes), styles: { fontStyle: "bold", halign: "right", textColor: vert, fillColor: [220, 255, 220] } },
+      ]],
+      footStyles: { fontSize: 8, cellPadding: 3 },
+      didDrawPage: (data) => {
+        // Footer sur chaque page
+        doc.setFontSize(7);
+        doc.setTextColor(150, 150, 150);
+        doc.text(
+          `B2S-STORE — Journal ${MOIS[moisSelectionne]} ${anneeSelectionnee} — Page ${data.pageNumber}`,
+          105, 292, { align: "center" }
+        );
+      },
+    });
+
+    // ===== TABLEAU DEPENSES =====
     if (depensesDuMois.length > 0) {
-      if (y > 220) { doc.addPage(); y = 20; }
+      doc.addPage();
 
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
+      doc.setFontSize(10);
       doc.setTextColor(...noir);
-      doc.text(`Depenses du mois (${depensesDuMois.length})`, 15, y);
-      y += 5;
+      doc.text(`Depenses du mois (${depensesDuMois.length})`, 15, 20);
 
       autoTable(doc, {
-        startY: y,
+        startY: 24,
         head: [["Date", "Description", "Categorie", "Montant"]],
         body: depensesDuMois.map(d => [
-          formatDate(d.createdAt),
+          clean(formatDate(d.createdAt)),
           clean(d.description || "-"),
           clean(d.categorie || "-"),
-          `${Number(d.montant || 0).toLocaleString("fr-SN")} FCFA`,
+          montantPDF(d.montant),
         ]),
-        headStyles: { fillColor: [180, 30, 30], textColor: [255,255,255], fontStyle: "bold", fontSize: 8, cellPadding: 4 },
-        bodyStyles: { fontSize: 8, cellPadding: 4, textColor: noir },
-        alternateRowStyles: { fillColor: [255, 250, 250] },
-        columnStyles: {
-          0: { cellWidth: 20 },
-          1: { cellWidth: 80 },
-          2: { cellWidth: 60 },
-          3: { cellWidth: 30, halign: "right" },
+        headStyles: {
+          fillColor: rouge,
+          textColor: [255, 255, 255],
+          fontStyle: "bold",
+          fontSize: 8,
+          cellPadding: 3,
         },
-        margin: { left: 15, right: 15 },
-        styles: { lineColor: [230, 228, 224], lineWidth: 0.1 },
+        bodyStyles: {
+          fontSize: 7,
+          cellPadding: 2.5,
+          textColor: noir,
+          overflow: "linebreak",
+        },
+        alternateRowStyles: { fillColor: [255, 248, 248] },
+        columnStyles: {
+          0: { cellWidth: 16 },
+          1: { cellWidth: 80 },
+          2: { cellWidth: 55 },
+          3: { cellWidth: 29, halign: "right" },
+        },
+        margin: { left: 10, right: 10 },
+        styles: { lineColor: [220, 220, 220], lineWidth: 0.1 },
+        showFoot: "lastPage",
         foot: [[
-          "", "", "TOTAL DEPENSES",
-          { content: `${totalDepenses.toLocaleString("fr-SN")} FCFA`, styles: { fontStyle: "bold", textColor: rouge, halign: "right" } }
+          { content: "", colSpan: 2 },
+          { content: "TOTAL DEPENSES", styles: { fontStyle: "bold", fillColor: [255, 220, 220] } },
+          { content: montantPDF(totalDepenses), styles: { fontStyle: "bold", halign: "right", textColor: rouge, fillColor: [255, 220, 220] } },
         ]],
-        footStyles: { fillColor: [255, 240, 240], textColor: rouge, fontStyle: "bold", fontSize: 9 },
+        footStyles: { fontSize: 8, cellPadding: 3 },
+        didDrawPage: (data) => {
+          doc.setFontSize(7);
+          doc.setTextColor(150, 150, 150);
+          doc.text(
+            `B2S-STORE — Journal ${MOIS[moisSelectionne]} ${anneeSelectionnee} — Page ${data.pageNumber}`,
+            105, 292, { align: "center" }
+          );
+        },
       });
-
-      y = doc.lastAutoTable.finalY + 15;
     }
 
-    // Top produits
+    // ===== TOP PRODUITS =====
     if (topProduits.length > 0) {
-      if (y > 220) { doc.addPage(); y = 20; }
+      doc.addPage();
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(...noir);
+      doc.text("Top produits vendus", 15, 20);
+
+      autoTable(doc, {
+        startY: 24,
+        head: [["#", "Produit", "Quantite vendue", "Chiffre d'affaires"]],
+        body: topProduits.map((p, i) => [
+          `${i + 1}`,
+          clean(p.nom),
+          `${p.quantite} unite(s)`,
+          montantPDF(p.total),
+        ]),
+        headStyles: {
+          fillColor: bleu,
+          textColor: [255, 255, 255],
+          fontStyle: "bold",
+          fontSize: 8,
+          cellPadding: 3,
+        },
+        bodyStyles: {
+          fontSize: 7,
+          cellPadding: 2.5,
+          textColor: noir,
+          overflow: "linebreak",
+        },
+        alternateRowStyles: { fillColor: [248, 250, 255] },
+        columnStyles: {
+          0: { cellWidth: 10, halign: "center" },
+          1: { cellWidth: 110 },
+          2: { cellWidth: 35, halign: "center" },
+          3: { cellWidth: 35, halign: "right" },
+        },
+        margin: { left: 10, right: 10 },
+        styles: { lineColor: [220, 220, 220], lineWidth: 0.1 },
+        didDrawPage: (data) => {
+          doc.setFontSize(7);
+          doc.setTextColor(150, 150, 150);
+          doc.text(
+            `B2S-STORE — Journal ${MOIS[moisSelectionne]} ${anneeSelectionnee} — Page ${data.pageNumber}`,
+            105, 292, { align: "center" }
+          );
+        },
+      });
+
+      // ===== BILAN FINAL =====
+      const y = doc.lastAutoTable.finalY + 15;
+
+      doc.setFillColor(...noir);
+      doc.rect(10, y, 190, 35, "F");
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
-      doc.setTextColor(...noir);
-      doc.text("Top produits vendus", 15, y);
-      y += 5;
+      doc.setTextColor(255, 255, 255);
+      doc.text("BILAN DU MOIS", 105, y + 10, { align: "center" });
 
-      autoTable(doc, {
-        startY: y,
-        head: [["Produit", "Quantite vendue", "Chiffre d'affaires"]],
-        body: topProduits.map(p => [
-          clean(p.nom),
-          `${p.quantite} unite(s)`,
-          `${Number(p.total).toLocaleString("fr-SN")} FCFA`,
-        ]),
-        headStyles: { fillColor: [30, 80, 160], textColor: [255,255,255], fontStyle: "bold", fontSize: 8, cellPadding: 4 },
-        bodyStyles: { fontSize: 8, cellPadding: 4, textColor: noir },
-        alternateRowStyles: { fillColor: [248, 250, 255] },
-        columnStyles: {
-          0: { cellWidth: 100 },
-          1: { cellWidth: 45, halign: "center" },
-          2: { cellWidth: 45, halign: "right" },
-        },
-        margin: { left: 15, right: 15 },
-        styles: { lineColor: [230, 228, 224], lineWidth: 0.1 },
-      });
+      doc.setFontSize(9);
+      doc.setTextColor(100, 255, 100);
+      doc.text(`Recettes : ${montantPDF(totalVentes)}`, 25, y + 22);
 
-      y = doc.lastAutoTable.finalY + 15;
+      doc.setTextColor(255, 100, 100);
+      doc.text(`Depenses : ${montantPDF(totalDepenses)}`, 90, y + 22);
+
+      doc.setTextColor(benefice >= 0 ? 100 : 255, benefice >= 0 ? 200 : 100, benefice >= 0 ? 255 : 100);
+      doc.text(`Benefice : ${benefice >= 0 ? "+" : ""}${montantPDF(benefice)}`, 185, y + 22, { align: "right" });
+
+      // Footer final
+      doc.setFillColor(...gris);
+      doc.rect(0, 285, 210, 12, "F");
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7);
+      doc.setTextColor(120, 120, 120);
+      doc.text(
+        `Journal genere le ${new Date().toLocaleDateString("fr-SN")} — B2S-STORE — Mbed Fass Yeumbeul, Dakar`,
+        105, 292, { align: "center" }
+      );
     }
-
-    // Bilan final
-    if (y > 240) { doc.addPage(); y = 20; }
-
-    doc.setFillColor(...noir);
-    doc.rect(15, y, 180, 30, "F");
-    doc.setTextColor(255, 255, 255);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(12);
-    doc.text("BILAN DU MOIS", 105, y + 10, { align: "center" });
-    doc.setFontSize(10);
-    doc.text(`Recettes : ${totalVentes.toLocaleString("fr-SN")} FCFA`, 25, y + 22);
-    doc.text(`Depenses : ${totalDepenses.toLocaleString("fr-SN")} FCFA`, 90, y + 22);
-    doc.setTextColor(benefice >= 0 ? 100 : 255, benefice >= 0 ? 255 : 100, 100);
-    doc.setFontSize(11);
-    doc.text(`Benefice : ${benefice >= 0 ? "+" : ""}${benefice.toLocaleString("fr-SN")} FCFA`, 155, y + 22, { align: "right" });
-
-    // Footer
-    const pageHeight = doc.internal.pageSize.height;
-    doc.setFillColor(...grisClair);
-    doc.rect(0, pageHeight - 20, 210, 20, "F");
-    doc.setTextColor(150, 150, 150);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-    doc.text(`Journal genere le ${new Date().toLocaleDateString("fr-SN")} — B2S-STORE`, 105, pageHeight - 8, { align: "center" });
 
     doc.save(`journal-b2s-store-${MOIS[moisSelectionne]}-${anneeSelectionnee}.pdf`);
   }
@@ -369,7 +452,7 @@ export default function Journal() {
                 <div className="bg-green-50 border border-green-200 rounded-2xl p-5">
                   <p className="text-green-600 text-xs font-bold uppercase tracking-wide mb-1">Recettes</p>
                   <p className="font-black text-2xl text-green-700">{formatPrix(totalVentes)}</p>
-                  <p className="text-green-500 text-xs mt-1">{commandesDuMois.length} commande(s) livree(s)</p>
+                  <p className="text-green-500 text-xs mt-1">{commandesDuMois.length} commande(s)</p>
                 </div>
                 <div className="bg-red-50 border border-red-200 rounded-2xl p-5">
                   <p className="text-red-600 text-xs font-bold uppercase tracking-wide mb-1">Depenses</p>
@@ -381,16 +464,14 @@ export default function Journal() {
                   <p className={`font-black text-2xl ${benefice >= 0 ? "text-blue-700" : "text-orange-700"}`}>
                     {benefice >= 0 ? "+" : ""}{formatPrix(benefice)}
                   </p>
-                  <p className={`${benefice >= 0 ? "text-blue-500" : "text-orange-500"} text-xs mt-1`}>
-                    {benefice >= 0 ? "Benefice" : "Deficit"}
-                  </p>
                 </div>
               </div>
 
-              {/* Ventes du mois */}
+              {/* Ventes */}
               <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-6">
-                <div className="p-4 border-b border-gray-100">
-                  <h3 className="font-bold text-base">Ventes du mois ({commandesDuMois.length})</h3>
+                <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+                  <h3 className="font-bold text-base">Ventes du mois</h3>
+                  <span className="text-sm text-gray-400">{commandesDuMois.length} commande(s)</span>
                 </div>
                 {commandesDuMois.length === 0 ? (
                   <div className="text-center py-10 text-gray-400">Aucune vente ce mois-ci</div>
@@ -402,26 +483,24 @@ export default function Journal() {
                           <p className="font-medium text-sm">{c.client?.prenom} {c.client?.nom}</p>
                           <p className="text-gray-400 text-xs">{formatDate(c.createdAt)} — {c.articles?.length} article(s)</p>
                         </div>
-                        <div className="text-right">
-                          <p className="font-black text-sm text-green-600">+{formatPrix(Number(c.total))}</p>
-                          <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{c.statut}</span>
-                        </div>
+                        <p className="font-black text-sm text-green-600">+{formatPrix(Number(c.total))}</p>
                       </div>
                     ))}
                   </div>
                 )}
                 {commandesDuMois.length > 0 && (
-                  <div className="p-4 border-t border-gray-100 flex justify-between items-center bg-green-50">
+                  <div className="p-4 border-t border-gray-100 flex justify-between bg-green-50">
                     <span className="font-bold text-sm text-green-700">Total ventes</span>
                     <span className="font-black text-green-700">{formatPrix(totalVentes)}</span>
                   </div>
                 )}
               </div>
 
-              {/* Depenses du mois */}
+              {/* Depenses */}
               <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-6">
-                <div className="p-4 border-b border-gray-100">
-                  <h3 className="font-bold text-base">Depenses du mois ({depensesDuMois.length})</h3>
+                <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+                  <h3 className="font-bold text-base">Depenses du mois</h3>
+                  <span className="text-sm text-gray-400">{depensesDuMois.length} depense(s)</span>
                 </div>
                 {depensesDuMois.length === 0 ? (
                   <div className="text-center py-10 text-gray-400">Aucune depense ce mois-ci</div>
@@ -439,7 +518,7 @@ export default function Journal() {
                   </div>
                 )}
                 {depensesDuMois.length > 0 && (
-                  <div className="p-4 border-t border-gray-100 flex justify-between items-center bg-red-50">
+                  <div className="p-4 border-t border-gray-100 flex justify-between bg-red-50">
                     <span className="font-bold text-sm text-red-700">Total depenses</span>
                     <span className="font-black text-red-700">{formatPrix(totalDepenses)}</span>
                   </div>
@@ -453,13 +532,13 @@ export default function Journal() {
                     <h3 className="font-bold text-base">Top produits vendus</h3>
                   </div>
                   <div className="divide-y divide-gray-50">
-                    {topProduits.map((p, i) => (
+                    {topProduits.slice(0, 10).map((p, i) => (
                       <div key={p.nom} className="flex items-center justify-between px-4 py-3">
                         <div className="flex items-center gap-3">
                           <span className="w-7 h-7 bg-gray-900 text-white rounded-full flex items-center justify-center text-xs font-black">{i + 1}</span>
                           <div>
                             <p className="font-medium text-sm">{p.nom}</p>
-                            <p className="text-gray-400 text-xs">{p.quantite} unite(s) vendue(s)</p>
+                            <p className="text-gray-400 text-xs">{p.quantite} unite(s)</p>
                           </div>
                         </div>
                         <p className="font-black text-sm">{formatPrix(p.total)}</p>
@@ -469,7 +548,7 @@ export default function Journal() {
                 </div>
               )}
 
-              {/* Bilan final */}
+              {/* Bilan */}
               <div className="bg-gray-900 rounded-2xl p-6 text-white">
                 <h3 className="font-black text-lg mb-4">Bilan de {MOIS[moisSelectionne]} {anneeSelectionnee}</h3>
                 <div className="grid grid-cols-3 gap-4 mb-4">
