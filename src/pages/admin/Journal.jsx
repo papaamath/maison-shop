@@ -15,6 +15,7 @@ const NAV_LINKS = [
   { to: "/admin/journal", label: "Journal mensuel", active: true },
   { to: "/admin/associes", label: "Associes" },
   { to: "/shop", label: "Voir la boutique" },
+  { to: "/admin/stock", label: "Valeur du stock" },
 ];
 
 const MOIS = [
