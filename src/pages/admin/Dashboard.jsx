@@ -97,6 +97,7 @@ export default function Dashboard() {
     { to: "/admin/caisse", label: "Caisse" },
     { to: "/shop", label: "Voir la boutique" },
     { to: "/admin/associes", label: "Associes" },
+    { to: "/admin/journal", label: "Journal mensuel" },
   ];
 
   return (

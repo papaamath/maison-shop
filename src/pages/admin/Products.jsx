@@ -29,6 +29,7 @@ const NAV_LINKS = [
   { to: "/admin/caisse", label: "Caisse" },
   { to: "/admin/associes", label: "Associes" },
   { to: "/shop", label: "Voir la boutique" },
+  { to: "/admin/journal", label: "Journal mensuel" },
 ];
 
 function Sidebar() {
