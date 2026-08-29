@@ -23,6 +23,7 @@ import Caisse from "./pages/admin/Caisse"
 import Associes from "./pages/admin/Associes";
 import Journal from "./pages/admin/Journal";
 import StockValeur from "./pages/admin/StockValeur";
+import Photocopie from "./pages/admin/Photocopie";
 export default function App() {
   return (
     <AuthProvider>
@@ -52,6 +53,7 @@ export default function App() {
             <Route path="/admin/associes" element={<ProtectedRoute><Associes /></ProtectedRoute>} />
             <Route path="/admin/journal" element={<ProtectedRoute><Journal /></ProtectedRoute>} />
             <Route path="/admin/stock" element={<ProtectedRoute><StockValeur /></ProtectedRoute>} />
+            <Route path="/admin/photocopie" element={<ProtectedRoute><Photocopie /></ProtectedRoute>} />
             
           </Routes>
         </BrowserRouter>
