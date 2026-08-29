@@ -14,6 +14,7 @@ const NAV_LINKS = [
   { to: "/admin/stock", label: "Valeur du stock", active: true },
   { to: "/admin/associes", label: "Associes" },
   { to: "/shop", label: "Voir la boutique" },
+  { to: "/admin/photocopie", label: "Photocopie" },
 ];
 
 function Sidebar() {

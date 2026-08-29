@@ -16,6 +16,7 @@ const NAV_LINKS = [
   { to: "/admin/associes", label: "Associes" },
   { to: "/shop", label: "Voir la boutique" },
   { to: "/admin/stock", label: "Valeur du stock" },
+  { to: "/admin/photocopie", label: "Photocopie" },
 ];
 
 const MOIS = [

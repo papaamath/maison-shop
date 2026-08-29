@@ -99,6 +99,7 @@ export default function Dashboard() {
     { to: "/admin/associes", label: "Associes" },
     { to: "/admin/journal", label: "Journal mensuel" },
     { to: "/admin/stock", label: "Valeur du stock" },
+    { to: "/admin/photocopie", label: "Photocopie" },
   ];
 
   return (
