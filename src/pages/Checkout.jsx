@@ -35,7 +35,7 @@ async function envoyerEmailAdmin(commande) {
 }
 
 export default function Checkout() {
-  const { cart, total, clearCart } = useCart();
+  const { cart, total, clearCart, updateQty, removeFromCart } = useCart();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [modeLivraison, setModeLivraison] = useState("livraison");
@@ -307,29 +307,75 @@ export default function Checkout() {
           {/* Recap commande */}
           <div className="space-y-4">
             <div className="bg-white rounded-3xl border border-blue-100 p-6 shadow-sm">
-              <h2 className="font-black text-lg mb-4 text-blue-950">Recapitulatif</h2>
-              <div className="space-y-3">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-black text-lg text-blue-950">Recapitulatif</h2>
+                <span className="text-sm text-gray-400">
+                  {cart.reduce((a, i) => a + i.qty, 0)} article(s)
+                </span>
+              </div>
+
+              <div className="space-y-4">
                 {cart.map(item => (
-                  <div key={`${item.id}_${item.tailleChoisie || ""}`} className="flex items-center gap-3">
-                    <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden border border-blue-100">
+                  <div key={`${item.id}_${item.tailleChoisie || ""}`} className="flex items-start gap-3 pb-4 border-b border-blue-50 last:border-0 last:pb-0">
+                    
+                    {/* Image */}
+                    <div className="w-14 h-14 bg-blue-50 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden border border-blue-100">
                       {item.image ? (
                         <img src={item.image} alt={item.nom} className="w-full h-full object-cover" />
-                      ) : "📦"}
-                    </div>
-                    <div className="flex-1">
-                      <p className="font-bold text-sm text-blue-950">{item.nom}</p>
-                      {item.tailleChoisie && (
-                        <p className="text-orange-500 text-xs font-bold">Pointure : {item.tailleChoisie}</p>
+                      ) : (
+                        <span className="text-xl">📦</span>
                       )}
-                      <p className="text-gray-400 text-xs">Qte : {item.qty}</p>
                     </div>
-                    <span className="font-bold text-sm text-orange-500">
+
+                    {/* Infos + controles */}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-sm text-blue-950 line-clamp-1">{item.nom}</p>
+                      {item.tailleChoisie && (
+                        <p className="text-orange-500 text-xs font-bold mt-0.5">
+                          Pointure : {item.tailleChoisie}
+                        </p>
+                      )}
+                      <p className="text-gray-400 text-xs mt-0.5">{formatPrix(item.prix)} / unite</p>
+
+                      {/* Controles quantite */}
+                      <div className="flex items-center gap-2 mt-2">
+                        <div className="flex items-center border border-blue-100 rounded-lg overflow-hidden">
+                          <button
+                            type="button"
+                            onClick={() => updateQty(item.id, item.qty - 1, item.tailleChoisie)}
+                            className="w-7 h-7 bg-blue-50 hover:bg-blue-100 text-blue-950 font-bold text-base transition flex items-center justify-center"
+                          >
+                            -
+                          </button>
+                          <span className="px-3 text-sm font-bold min-w-8 text-center">{item.qty}</span>
+                          <button
+                            type="button"
+                            onClick={() => updateQty(item.id, item.qty + 1, item.tailleChoisie)}
+                            className="w-7 h-7 bg-blue-50 hover:bg-blue-100 text-blue-950 font-bold text-base transition flex items-center justify-center"
+                          >
+                            +
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => removeFromCart(item.id, item.tailleChoisie)}
+                          className="text-red-400 hover:text-red-600 text-xs font-medium transition px-2 py-1 hover:bg-red-50 rounded-lg"
+                        >
+                          Retirer
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Prix total ligne */}
+                    <span className="font-black text-sm text-orange-500 flex-shrink-0">
                       {formatPrix(item.prix * item.qty)}
                     </span>
                   </div>
                 ))}
               </div>
 
+              {/* Totaux */}
               <div className="border-t border-blue-100 mt-4 pt-4 space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Sous-total</span>
@@ -354,6 +400,15 @@ export default function Checkout() {
                   <span className="text-orange-500">{formatPrix(totalFinal)}</span>
                 </div>
               </div>
+
+              {/* Continuer les achats */}
+              <button
+                type="button"
+                onClick={() => navigate("/shop")}
+                className="w-full mt-4 border border-blue-100 text-blue-950 py-2.5 rounded-xl font-medium text-sm hover:bg-blue-50 transition"
+              >
+                Continuer mes achats
+              </button>
             </div>
 
             <div className="bg-gradient-to-r from-blue-950 to-orange-500 rounded-3xl p-5 text-sm text-white shadow-lg">
