@@ -56,6 +56,8 @@ export default function Home() {
   { nom: "Femme", icon: "👩", desc: "Maquillage, chaussures, bracelets", color: "bg-rose-50 border-rose-200 text-rose-700" },
   { nom: "Papeterie", icon: "✏️", desc: "Bics, fournitures", color: "bg-yellow-50 border-yellow-200 text-yellow-700" },
   { nom: "Accessoires", icon: "👜", desc: "Ceintures, lunettes, bijoux", color: "bg-teal-50 border-teal-200 text-teal-700" },
+  { nom: "Chaussures", icon: "👟", desc: "Baskets, sandales, chaussures de ville", color: "bg-amber-50 border-amber-200 text-amber-700" },
+  { nom: "Vetements", icon: "👔", desc: "Hauts, bas, tenues completes", color: "bg-cyan-50 border-cyan-200 text-cyan-700" },
 ];
 
   return (

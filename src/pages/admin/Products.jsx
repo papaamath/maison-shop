@@ -5,7 +5,8 @@ import { Link } from "react-router-dom";
 import { formatPrix } from "../../utils/format";
 import ImageUpload from "../../components/ImageUpload";
 
-const CATEGORIES = ["Sport","Maillot","Electronique","Montres","Sacs","Toilettes","Femme","Papeterie","Accessoires"];
+const CATEGORIES = ["Sport","Maillot","Electronique","Montres","Sacs","Toilettes","Femme","Papeterie","Accessoires","Chaussures",
+"Vetements",];
 
 const FORM_VIDE = {
   nom: "",

@@ -4,7 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { useState } from "react";
 
 export default function Navbar() {
-  const { cart, count } = useCart();
+  const { count } = useCart();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -15,15 +15,17 @@ export default function Navbar() {
       <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between">
 
         {/* Logo */}
-        <Link to="/" className="flex items-center gap-2">
+        <Link to="/" className="flex items-center gap-2 flex-shrink-0">
           <img src="/logo.jpeg" alt="B2S-STORE" className="h-10 w-auto object-contain" />
           <span className="font-black text-xl tracking-tight hidden sm:block">B2S-STORE</span>
         </Link>
 
         {/* Menu desktop */}
-        <div className="hidden md:flex items-center gap-8 text-sm font-medium text-gray-600">
+        <div className="hidden lg:flex items-center gap-6 text-sm font-medium text-gray-600">
           <Link to="/" className="hover:text-black transition">Accueil</Link>
           <Link to="/shop" className="hover:text-black transition">Boutique</Link>
+          <Link to="/shop?cat=Chaussures" className="hover:text-black transition">Chaussures</Link>
+          <Link to="/shop?cat=Vetements" className="hover:text-black transition">Vetements</Link>
           <Link to="/suivi" className="hover:text-black transition">Suivi commande</Link>
           <Link to="/contact" className="hover:text-black transition">Contact</Link>
         </div>
@@ -72,26 +74,54 @@ export default function Navbar() {
             </div>
           )}
 
-          <button onClick={() => setMenuOpen(!menuOpen)} className="md:hidden bg-gray-100 p-2 rounded-lg">
+          <button onClick={() => setMenuOpen(!menuOpen)} className="lg:hidden bg-gray-100 p-2 rounded-lg">
             {menuOpen ? "X" : "≡"}
           </button>
         </div>
       </div>
 
+      {/* Menu mobile */}
       {menuOpen && (
-        <div className="md:hidden border-t border-gray-100 bg-white px-6 py-4 space-y-3">
-          <Link to="/" onClick={() => setMenuOpen(false)} className="block text-sm font-medium text-gray-700 py-2 border-b border-gray-50">Accueil</Link>
-          <Link to="/shop" onClick={() => setMenuOpen(false)} className="block text-sm font-medium text-gray-700 py-2 border-b border-gray-50">Boutique</Link>
-          <Link to="/suivi" onClick={() => setMenuOpen(false)} className="block text-sm font-medium text-gray-700 py-2 border-b border-gray-50">Suivi commande</Link>
-          <Link to="/contact" onClick={() => setMenuOpen(false)} className="block text-sm font-medium text-gray-700 py-2 border-b border-gray-50">Contact</Link>
+        <div className="lg:hidden border-t border-gray-100 bg-white px-6 py-4 space-y-3">
+          <Link to="/" onClick={() => setMenuOpen(false)}
+            className="block text-sm font-medium text-gray-700 py-2 border-b border-gray-50">
+            Accueil
+          </Link>
+          <Link to="/shop" onClick={() => setMenuOpen(false)}
+            className="block text-sm font-medium text-gray-700 py-2 border-b border-gray-50">
+            Boutique
+          </Link>
+          <Link to="/shop?cat=Chaussures" onClick={() => setMenuOpen(false)}
+            className="block text-sm font-medium text-gray-700 py-2 border-b border-gray-50">
+            Chaussures
+          </Link>
+          <Link to="/shop?cat=Vetements" onClick={() => setMenuOpen(false)}
+            className="block text-sm font-medium text-gray-700 py-2 border-b border-gray-50">
+            Vetements
+          </Link>
+          <Link to="/suivi" onClick={() => setMenuOpen(false)}
+            className="block text-sm font-medium text-gray-700 py-2 border-b border-gray-50">
+            Suivi commande
+          </Link>
+          <Link to="/contact" onClick={() => setMenuOpen(false)}
+            className="block text-sm font-medium text-gray-700 py-2 border-b border-gray-50">
+            Contact
+          </Link>
           {user ? (
-            <button onClick={() => { logout(); setMenuOpen(false); }} className="block text-sm font-medium text-red-600 py-2">
+            <button onClick={() => { logout(); setMenuOpen(false); }}
+              className="block text-sm font-medium text-red-600 py-2">
               Deconnexion
             </button>
           ) : (
             <>
-              <Link to="/login" onClick={() => setMenuOpen(false)} className="block text-sm font-medium text-gray-700 py-2 border-b border-gray-50">Connexion</Link>
-              <Link to="/register" onClick={() => setMenuOpen(false)} className="block text-sm font-medium text-red-600 py-2">S'inscrire</Link>
+              <Link to="/login" onClick={() => setMenuOpen(false)}
+                className="block text-sm font-medium text-gray-700 py-2 border-b border-gray-50">
+                Connexion
+              </Link>
+              <Link to="/register" onClick={() => setMenuOpen(false)}
+                className="block text-sm font-medium text-red-600 py-2">
+                S'inscrire
+              </Link>
             </>
           )}
         </div>

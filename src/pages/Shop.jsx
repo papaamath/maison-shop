@@ -17,6 +17,8 @@ const CATEGORIES = [
   "Femme",
   "Papeterie",
   "Accessoires",
+  "Chaussures",
+  "Vetements",
 ];
 
 export default function Shop() {
