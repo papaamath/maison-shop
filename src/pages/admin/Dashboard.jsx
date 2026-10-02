@@ -100,6 +100,7 @@ export default function Dashboard() {
     { to: "/admin/journal", label: "Journal mensuel" },
     { to: "/admin/stock", label: "Valeur du stock" },
     { to: "/admin/photocopie", label: "Photocopie" },
+    { to: "/admin/scolaire", label: "Fournitures scolaires" },
   ];
 
   return (

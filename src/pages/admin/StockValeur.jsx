@@ -15,6 +15,7 @@ const NAV_LINKS = [
   { to: "/admin/associes", label: "Associes" },
   { to: "/shop", label: "Voir la boutique" },
   { to: "/admin/photocopie", label: "Photocopie" },
+  { to: "/admin/scolaire", label: "Fournitures scolaires" },
 ];
 
 function Sidebar() {

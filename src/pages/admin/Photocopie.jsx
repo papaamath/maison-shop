@@ -15,6 +15,7 @@ const NAV_LINKS = [
   { to: "/admin/photocopie", label: "Photocopie", active: true },
   { to: "/admin/associes", label: "Associes" },
   { to: "/shop", label: "Voir la boutique" },
+  { to: "/admin/scolaire", label: "Fournitures scolaires" },
 ];
 
 const MOIS = [
