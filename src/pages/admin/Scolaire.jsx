@@ -86,7 +86,7 @@ function formatDate(ts) {
 }
 
 const ARTICLE_VIDE = { nom: "", categorie: "Cahiers", prixAchat: "", prixVente: "", stock: "" };
-const VENTE_VIDE = { articleId: "", quantite: "1", montant: "", client: "" };
+const VENTE_VIDE = { articleId: "", quantite: "1", prixUnitaire: "", montant: "", client: "" };
 const DEPENSE_VIDE = { description: "", montant: "", categorie: "Achat de stock" };
 
 export default function Scolaire() {
@@ -161,7 +161,7 @@ export default function Scolaire() {
         nom: articleForm.nom,
         categorie: articleForm.categorie,
         prixAchat: Number(articleForm.prixAchat || 0),
-        prixVente: Number(articleForm.prixVente),
+        prixVente: Number(articleForm.prixVente || 0),
         stock: Number(articleForm.stock || 0),
       };
       if (editingArticle) await updateDoc(doc(db, "scolaire_articles", editingArticle), data);
@@ -200,10 +200,18 @@ export default function Scolaire() {
     const { name, value } = e.target;
     setVenteForm(f => {
       const updated = { ...f, [name]: value };
-      const artId = name === "articleId" ? value : f.articleId;
-      const qte = Number(name === "quantite" ? value : f.quantite);
-      const art = articles.find(a => a.id === artId);
-      if (art && qte > 0) updated.montant = String(art.prixVente * qte);
+
+      // Quand on choisit un article, on pre-remplit le prix indicatif
+      if (name === "articleId") {
+        const art = articles.find(a => a.id === value);
+        updated.prixUnitaire = art ? String(art.prixVente || "") : "";
+      }
+
+      // Recalcule le total des que prix ou quantite change
+      const qte = Number(name === "quantite" ? value : updated.quantite);
+      const pu = Number(name === "prixUnitaire" ? value : updated.prixUnitaire);
+      if (qte > 0 && pu > 0) updated.montant = String(qte * pu);
+
       return updated;
     });
   }
@@ -226,13 +234,12 @@ export default function Scolaire() {
         articleNom: article.nom,
         categorie: article.categorie,
         quantite: qte,
-        prixUnitaire: Number(article.prixVente),
+        prixUnitaire: Number(venteForm.prixUnitaire),
         prixAchatUnitaire: Number(article.prixAchat || 0),
         montant: Number(venteForm.montant),
         client: venteForm.client,
         createdAt: serverTimestamp(),
       });
-      // Diminue le stock
       await updateDoc(doc(db, "scolaire_articles", article.id), {
         stock: Number(article.stock || 0) - qte,
       });
@@ -294,7 +301,6 @@ export default function Scolaire() {
   const totalDepensesMois = depensesDuMois.reduce((a, d) => a + Number(d.montant || 0), 0);
   const beneficeMois = totalRecettesMois - totalDepensesMois;
 
-  // Marge brute (prix vente - prix achat) sur les ventes du mois
   const margeMois = ventesDuMois.reduce(
     (a, v) => a + (Number(v.prixUnitaire || 0) - Number(v.prixAchatUnitaire || 0)) * Number(v.quantite || 0),
     0
@@ -303,7 +309,6 @@ export default function Scolaire() {
   const ruptures = articles.filter(a => Number(a.stock || 0) === 0);
   const stockFaible = articles.filter(a => { const s = Number(a.stock || 0); return s > 0 && s <= 5; });
 
-  // Top articles vendus
   const ventesParArticle = {};
   ventes.forEach(v => {
     if (!ventesParArticle[v.articleNom]) ventesParArticle[v.articleNom] = { nom: v.articleNom, quantite: 0, total: 0 };
@@ -319,6 +324,9 @@ export default function Scolaire() {
   ].filter(Boolean))].sort((a, b) => b - a);
 
   const articleChoisi = articles.find(a => a.id === venteForm.articleId);
+  const margeVente = articleChoisi
+    ? (Number(venteForm.prixUnitaire || 0) - Number(articleChoisi.prixAchat || 0)) * Number(venteForm.quantite || 0)
+    : 0;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -327,7 +335,6 @@ export default function Scolaire() {
         <Sidebar />
         <main className="flex-1 md:ml-56 p-4 md:p-8">
 
-          {/* Header */}
           <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
             <div>
               <h2 className="font-black text-xl md:text-2xl">Fournitures scolaires</h2>
@@ -351,7 +358,6 @@ export default function Scolaire() {
 
           {loading ? <div className="text-gray-400">Chargement...</div> : (
             <>
-              {/* Cartes globales */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                 <div className="bg-green-50 border border-green-200 rounded-2xl p-4">
                   <p className="text-green-600 text-xs font-bold uppercase mb-1">Total recettes</p>
@@ -376,15 +382,12 @@ export default function Scolaire() {
                 </div>
               </div>
 
-              {/* Alertes stock */}
               {(ruptures.length > 0 || stockFaible.length > 0) && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                   {ruptures.length > 0 && (
                     <div className="bg-red-50 border border-red-200 rounded-xl p-4">
                       <p className="font-bold text-red-700 mb-2 text-sm">Ruptures de stock ({ruptures.length})</p>
-                      {ruptures.map(a => (
-                        <p key={a.id} className="text-sm text-red-600">- {a.nom}</p>
-                      ))}
+                      {ruptures.map(a => <p key={a.id} className="text-sm text-red-600">- {a.nom}</p>)}
                     </div>
                   )}
                   {stockFaible.length > 0 && (
@@ -398,7 +401,6 @@ export default function Scolaire() {
                 </div>
               )}
 
-              {/* Onglets */}
               <div className="flex gap-2 flex-wrap mb-6">
                 {[
                   { id: "bilan", label: "Bilan du mois" },
@@ -413,7 +415,7 @@ export default function Scolaire() {
                 ))}
               </div>
 
-              {/* ===== ONGLET BILAN ===== */}
+              {/* ===== BILAN ===== */}
               {onglet === "bilan" && (
                 <>
                   <div className="bg-white rounded-xl border border-gray-200 p-4 mb-5 flex items-center gap-4 flex-wrap">
@@ -451,7 +453,6 @@ export default function Scolaire() {
                     </div>
                   </div>
 
-                  {/* Ventes du mois */}
                   <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-5">
                     <div className="p-4 border-b border-gray-100">
                       <h3 className="font-bold text-sm">Ventes de {MOIS[moisSelectionne]}</h3>
@@ -465,7 +466,7 @@ export default function Scolaire() {
                             <div>
                               <p className="font-medium text-sm">{v.articleNom} x{v.quantite}</p>
                               <p className="text-gray-400 text-xs">
-                                {formatDate(v.createdAt)}
+                                {formatDate(v.createdAt)} — {formatPrix(v.prixUnitaire)} / unite
                                 {v.client && ` — ${v.client}`}
                               </p>
                             </div>
@@ -482,7 +483,6 @@ export default function Scolaire() {
                     )}
                   </div>
 
-                  {/* Depenses du mois */}
                   <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-5">
                     <div className="p-4 border-b border-gray-100">
                       <h3 className="font-bold text-sm">Depenses de {MOIS[moisSelectionne]}</h3>
@@ -510,7 +510,6 @@ export default function Scolaire() {
                     )}
                   </div>
 
-                  {/* Bilan */}
                   <div className="bg-gray-900 rounded-2xl p-5 text-white">
                     <h3 className="font-black text-base mb-3">
                       Bilan Fournitures — {MOIS[moisSelectionne]} {anneeSelectionnee}
@@ -539,14 +538,14 @@ export default function Scolaire() {
                 </>
               )}
 
-              {/* ===== ONGLET STOCK ===== */}
+              {/* ===== STOCK ===== */}
               {onglet === "stock" && (
                 <>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
                     <div className="bg-white rounded-xl border border-gray-200 p-4">
-                      <p className="text-gray-400 text-xs font-bold uppercase mb-1">Valeur stock au prix de vente</p>
+                      <p className="text-gray-400 text-xs font-bold uppercase mb-1">Valeur stock au prix indicatif</p>
                       <p className="font-black text-xl text-purple-700">{formatPrix(valeurStock)}</p>
-                      <p className="text-gray-400 text-xs mt-1">Ce que tu gagnerais en vendant tout</p>
+                      <p className="text-gray-400 text-xs mt-1">Estimation si tu vendais tout</p>
                     </div>
                     <div className="bg-white rounded-xl border border-gray-200 p-4">
                       <p className="text-gray-400 text-xs font-bold uppercase mb-1">Valeur stock au prix d'achat</p>
@@ -587,7 +586,7 @@ export default function Scolaire() {
                                       Achat : <b>{formatPrix(a.prixAchat || 0)}</b>
                                     </span>
                                     <span className="text-xs text-gray-500">
-                                      Vente : <b className="text-green-600">{formatPrix(a.prixVente)}</b>
+                                      Vente indicatif : <b className="text-green-600">{formatPrix(a.prixVente || 0)}</b>
                                     </span>
                                     <span className={`text-xs ${marge > 0 ? "text-indigo-600" : "text-gray-400"}`}>
                                       Marge : <b>{formatPrix(marge)}</b>
@@ -640,7 +639,7 @@ export default function Scolaire() {
                 </>
               )}
 
-              {/* ===== ONGLET VENTES ===== */}
+              {/* ===== VENTES ===== */}
               {onglet === "ventes" && (
                 <>
                   {topArticles.length > 0 && (
@@ -703,7 +702,7 @@ export default function Scolaire() {
                 </>
               )}
 
-              {/* ===== ONGLET DEPENSES ===== */}
+              {/* ===== DEPENSES ===== */}
               {onglet === "depenses" && (
                 <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                   <div className="p-4 border-b border-gray-100 flex items-center justify-between">
@@ -777,18 +776,26 @@ export default function Scolaire() {
                     placeholder="300" />
                 </div>
                 <div>
-                  <label className="text-sm text-gray-500 block mb-1">Prix de vente (FCFA)</label>
+                  <label className="text-sm text-gray-500 block mb-1">
+                    Prix de vente <span className="text-gray-400 font-normal">(indicatif)</span>
+                  </label>
                   <input type="number" value={articleForm.prixVente}
-                    onChange={e => setArticleForm(f => ({ ...f, prixVente: e.target.value }))} required min="1"
+                    onChange={e => setArticleForm(f => ({ ...f, prixVente: e.target.value }))} min="0"
                     className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400"
                     placeholder="500" />
                 </div>
               </div>
 
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
+                <p className="text-blue-700 text-xs">
+                  Le prix de vente sert de valeur par defaut. Tu pourras le modifier a chaque vente.
+                </p>
+              </div>
+
               {articleForm.prixAchat && articleForm.prixVente && (
                 <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3">
                   <p className="text-indigo-700 text-sm font-bold">
-                    Marge par unite : {formatPrix(Number(articleForm.prixVente) - Number(articleForm.prixAchat))}
+                    Marge indicative : {formatPrix(Number(articleForm.prixVente) - Number(articleForm.prixAchat))}
                   </p>
                 </div>
               )}
@@ -840,7 +847,7 @@ export default function Scolaire() {
                     <option value="">-- Choisir un article --</option>
                     {articles.map(a => (
                       <option key={a.id} value={a.id} disabled={Number(a.stock || 0) === 0}>
-                        {a.nom} — {formatPrix(a.prixVente)} ({a.stock} en stock)
+                        {a.nom} ({a.stock} en stock)
                       </option>
                     ))}
                   </select>
@@ -852,19 +859,33 @@ export default function Scolaire() {
                       Stock disponible : {articleChoisi.stock} unite(s)
                     </p>
                     <p className={`text-xs mt-0.5 ${Number(articleChoisi.stock) <= 5 ? "text-orange-500" : "text-blue-500"}`}>
-                      Prix unitaire : {formatPrix(articleChoisi.prixVente)}
+                      Prix d'achat : {formatPrix(articleChoisi.prixAchat || 0)} — indicatif de vente : {formatPrix(articleChoisi.prixVente || 0)}
                     </p>
                   </div>
                 )}
 
-                <div>
-                  <label className="text-sm text-gray-500 block mb-1">Quantite vendue</label>
-                  <input type="number" name="quantite" value={venteForm.quantite}
-                    onChange={handleVenteChange} required min="1"
-                    max={articleChoisi ? articleChoisi.stock : undefined}
-                    className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400"
-                    placeholder="1" />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm text-gray-500 block mb-1">Quantite</label>
+                    <input type="number" name="quantite" value={venteForm.quantite}
+                      onChange={handleVenteChange} required min="1"
+                      max={articleChoisi ? articleChoisi.stock : undefined}
+                      className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400"
+                      placeholder="1" />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-500 block mb-1">
+                      Prix de vente <span className="text-orange-500 font-bold">*</span>
+                    </label>
+                    <input type="number" name="prixUnitaire" value={venteForm.prixUnitaire}
+                      onChange={handleVenteChange} required min="1"
+                      className="w-full border-2 border-orange-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-orange-500 font-bold"
+                      placeholder="500" />
+                  </div>
                 </div>
+                <p className="text-xs text-gray-400 -mt-2">
+                  Le prix est pre-rempli avec l'indicatif de l'article — ajuste-le selon le client.
+                </p>
 
                 <div>
                   <label className="text-sm text-gray-500 block mb-1">Nom du client — optionnel</label>
@@ -879,9 +900,22 @@ export default function Scolaire() {
                     onChange={handleVenteChange} required min="1"
                     className="w-full border border-green-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-green-400 bg-white font-bold text-green-700" />
                   <p className="text-xs text-green-500 mt-1">
-                    Calcule automatiquement — modifiable si tu fais un prix
+                    Quantite x prix de vente — modifiable aussi
                   </p>
                 </div>
+
+                {articleChoisi && venteForm.prixUnitaire && venteForm.quantite && (
+                  <div className={`border rounded-xl p-3 ${margeVente >= 0 ? "bg-indigo-50 border-indigo-200" : "bg-red-50 border-red-200"}`}>
+                    <p className={`text-sm font-bold ${margeVente >= 0 ? "text-indigo-700" : "text-red-700"}`}>
+                      Marge sur cette vente : {margeVente >= 0 ? "+" : ""}{formatPrix(margeVente)}
+                    </p>
+                    {margeVente < 0 && (
+                      <p className="text-xs text-red-500 mt-0.5">
+                        Attention : tu vends en dessous du prix d'achat
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 <div className="flex gap-3 pt-2">
                   <button type="button" onClick={() => setShowVenteForm(false)}
