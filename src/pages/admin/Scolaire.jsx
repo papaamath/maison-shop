@@ -85,6 +85,14 @@ function formatDate(ts) {
   });
 }
 
+// Recherche insensible aux accents et a la casse
+function normalise(str) {
+  return String(str || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
 const ARTICLE_VIDE = { nom: "", categorie: "Cahiers", prixAchat: "", prixVente: "", stock: "" };
 const VENTE_VIDE = { articleId: "", quantite: "1", prixUnitaire: "", montant: "", client: "" };
 const DEPENSE_VIDE = { description: "", montant: "", categorie: "Achat de stock" };
@@ -100,6 +108,12 @@ export default function Scolaire() {
 
   const [moisSelectionne, setMoisSelectionne] = useState(new Date().getMonth());
   const [anneeSelectionnee, setAnneeSelectionnee] = useState(new Date().getFullYear());
+
+  // Recherches
+  const [rechercheStock, setRechercheStock] = useState("");
+  const [filtreCategorie, setFiltreCategorie] = useState("Tous");
+  const [rechercheVentes, setRechercheVentes] = useState("");
+  const [rechercheArticleVente, setRechercheArticleVente] = useState("");
 
   const [showArticleForm, setShowArticleForm] = useState(false);
   const [editingArticle, setEditingArticle] = useState(null);
@@ -196,22 +210,27 @@ export default function Scolaire() {
   }
 
   // ===== VENTES =====
+  function choisirArticleVente(art) {
+    setVenteForm(f => {
+      const pu = String(art.prixVente || "");
+      const qte = Number(f.quantite) || 1;
+      return {
+        ...f,
+        articleId: art.id,
+        prixUnitaire: pu,
+        montant: pu ? String(qte * Number(pu)) : "",
+      };
+    });
+    setRechercheArticleVente("");
+  }
+
   function handleVenteChange(e) {
     const { name, value } = e.target;
     setVenteForm(f => {
       const updated = { ...f, [name]: value };
-
-      // Quand on choisit un article, on pre-remplit le prix indicatif
-      if (name === "articleId") {
-        const art = articles.find(a => a.id === value);
-        updated.prixUnitaire = art ? String(art.prixVente || "") : "";
-      }
-
-      // Recalcule le total des que prix ou quantite change
       const qte = Number(name === "quantite" ? value : updated.quantite);
       const pu = Number(name === "prixUnitaire" ? value : updated.prixUnitaire);
       if (qte > 0 && pu > 0) updated.montant = String(qte * pu);
-
       return updated;
     });
   }
@@ -246,6 +265,7 @@ export default function Scolaire() {
       await charger();
       setShowVenteForm(false);
       setVenteForm(VENTE_VIDE);
+      setRechercheArticleVente("");
     } catch { alert("Erreur."); }
     setSaving(false);
   }
@@ -323,6 +343,34 @@ export default function Scolaire() {
     new Date().getFullYear(),
   ].filter(Boolean))].sort((a, b) => b - a);
 
+  // ===== FILTRES =====
+  const categoriesPresentes = ["Tous", ...new Set(articles.map(a => a.categorie).filter(Boolean))];
+
+  const articlesFiltres = articles
+    .filter(a => {
+      const matchCat = filtreCategorie === "Tous" || a.categorie === filtreCategorie;
+      const matchNom = normalise(a.nom).includes(normalise(rechercheStock));
+      return matchCat && matchNom;
+    })
+    .sort((a, b) => (a.nom || "").localeCompare(b.nom || ""));
+
+  const valeurStockFiltree = articlesFiltres.reduce((a, art) => a + Number(art.stock || 0) * Number(art.prixVente || 0), 0);
+  const achatStockFiltree = articlesFiltres.reduce((a, art) => a + Number(art.stock || 0) * Number(art.prixAchat || 0), 0);
+
+  const ventesFiltrees = [...ventes]
+    .filter(v => {
+      const q = normalise(rechercheVentes);
+      if (!q) return true;
+      return normalise(v.articleNom).includes(q) || normalise(v.client).includes(q);
+    })
+    .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+
+  const totalVentesFiltrees = ventesFiltrees.reduce((a, v) => a + Number(v.montant || 0), 0);
+
+  const articlesPourVente = articles.filter(a =>
+    normalise(a.nom).includes(normalise(rechercheArticleVente))
+  );
+
   const articleChoisi = articles.find(a => a.id === venteForm.articleId);
   const margeVente = articleChoisi
     ? (Number(venteForm.prixUnitaire || 0) - Number(articleChoisi.prixAchat || 0)) * Number(venteForm.quantite || 0)
@@ -358,27 +406,35 @@ export default function Scolaire() {
 
           {loading ? <div className="text-gray-400">Chargement...</div> : (
             <>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+              {/* Cartes globales — 5 cartes avec le total d'achat */}
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
                 <div className="bg-green-50 border border-green-200 rounded-2xl p-4">
                   <p className="text-green-600 text-xs font-bold uppercase mb-1">Total recettes</p>
-                  <p className="font-black text-xl text-green-700">{formatPrix(totalRecettesGlobal)}</p>
+                  <p className="font-black text-lg text-green-700">{formatPrix(totalRecettesGlobal)}</p>
                   <p className="text-green-500 text-xs mt-1">{ventes.length} vente(s)</p>
                 </div>
                 <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
                   <p className="text-red-600 text-xs font-bold uppercase mb-1">Total depenses</p>
-                  <p className="font-black text-xl text-red-700">{formatPrix(totalDepensesGlobal)}</p>
+                  <p className="font-black text-lg text-red-700">{formatPrix(totalDepensesGlobal)}</p>
                   <p className="text-red-500 text-xs mt-1">{depenses.length} depense(s)</p>
                 </div>
                 <div className={`${beneficeGlobal >= 0 ? "bg-blue-50 border-blue-200" : "bg-orange-50 border-orange-200"} border rounded-2xl p-4`}>
                   <p className={`${beneficeGlobal >= 0 ? "text-blue-600" : "text-orange-600"} text-xs font-bold uppercase mb-1`}>Benefice net</p>
-                  <p className={`font-black text-xl ${beneficeGlobal >= 0 ? "text-blue-700" : "text-orange-700"}`}>
+                  <p className={`font-black text-lg ${beneficeGlobal >= 0 ? "text-blue-700" : "text-orange-700"}`}>
                     {beneficeGlobal >= 0 ? "+" : ""}{formatPrix(beneficeGlobal)}
                   </p>
                 </div>
+                <div className="bg-gray-100 border border-gray-300 rounded-2xl p-4">
+                  <p className="text-gray-600 text-xs font-bold uppercase mb-1">Achat total du stock</p>
+                  <p className="font-black text-lg text-gray-800">{formatPrix(valeurStockAchat)}</p>
+                  <p className="text-gray-500 text-xs mt-1">Ce que le stock t'a coute</p>
+                </div>
                 <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4">
-                  <p className="text-purple-600 text-xs font-bold uppercase mb-1">Valeur du stock</p>
-                  <p className="font-black text-xl text-purple-700">{formatPrix(valeurStock)}</p>
-                  <p className="text-purple-500 text-xs mt-1">{articles.length} article(s)</p>
+                  <p className="text-purple-600 text-xs font-bold uppercase mb-1">Valeur de revente</p>
+                  <p className="font-black text-lg text-purple-700">{formatPrix(valeurStock)}</p>
+                  <p className="text-purple-500 text-xs mt-1">
+                    Marge : {formatPrix(valeurStock - valeurStockAchat)}
+                  </p>
                 </div>
               </div>
 
@@ -541,40 +597,72 @@ export default function Scolaire() {
               {/* ===== STOCK ===== */}
               {onglet === "stock" && (
                 <>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+                  {/* Barre de recherche + filtres */}
+                  <div className="bg-white rounded-xl border border-gray-200 p-4 mb-5">
+                    <input
+                      value={rechercheStock}
+                      onChange={e => setRechercheStock(e.target.value)}
+                      placeholder="Rechercher un article..."
+                      className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400 mb-3"
+                    />
+                    <div className="flex gap-2 overflow-x-auto pb-1">
+                      {categoriesPresentes.map(c => (
+                        <button key={c} onClick={() => setFiltreCategorie(c)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition whitespace-nowrap flex-shrink-0 ${filtreCategorie === c ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-600 border-gray-200"}`}>
+                          {c}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Totaux du filtre */}
+                  <div className="grid grid-cols-2 gap-4 mb-5">
                     <div className="bg-white rounded-xl border border-gray-200 p-4">
-                      <p className="text-gray-400 text-xs font-bold uppercase mb-1">Valeur stock au prix indicatif</p>
-                      <p className="font-black text-xl text-purple-700">{formatPrix(valeurStock)}</p>
-                      <p className="text-gray-400 text-xs mt-1">Estimation si tu vendais tout</p>
+                      <p className="text-gray-400 text-xs font-bold uppercase mb-1">Achat total</p>
+                      <p className="font-black text-xl text-gray-800">{formatPrix(achatStockFiltree)}</p>
+                      <p className="text-gray-400 text-xs mt-1">
+                        {(rechercheStock || filtreCategorie !== "Tous") ? "Sur la selection" : "Sur tout le stock"}
+                      </p>
                     </div>
                     <div className="bg-white rounded-xl border border-gray-200 p-4">
-                      <p className="text-gray-400 text-xs font-bold uppercase mb-1">Valeur stock au prix d'achat</p>
-                      <p className="font-black text-xl text-gray-700">{formatPrix(valeurStockAchat)}</p>
-                      <p className="text-gray-400 text-xs mt-1">
-                        Marge potentielle : {formatPrix(valeurStock - valeurStockAchat)}
+                      <p className="text-gray-400 text-xs font-bold uppercase mb-1">Revente estimee</p>
+                      <p className="font-black text-xl text-purple-700">{formatPrix(valeurStockFiltree)}</p>
+                      <p className="text-indigo-500 text-xs mt-1">
+                        Marge : {formatPrix(valeurStockFiltree - achatStockFiltree)}
                       </p>
                     </div>
                   </div>
 
                   <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                     <div className="p-4 border-b border-gray-100 flex items-center justify-between">
-                      <h3 className="font-bold text-base">Mes articles</h3>
+                      <h3 className="font-bold text-base">
+                        Mes articles
+                        <span className="text-gray-400 font-normal ml-2 text-sm">({articlesFiltres.length})</span>
+                      </h3>
                       <button onClick={ouvrirNouvelArticle}
                         className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-700">
                         + Ajouter
                       </button>
                     </div>
 
-                    {articles.length === 0 ? (
+                    {articlesFiltres.length === 0 ? (
                       <div className="text-center py-12 text-gray-400">
-                        <p className="font-semibold">Aucun article enregistre</p>
-                        <p className="text-sm mt-1">Ajoute tes cahiers, bics, sacs...</p>
+                        <p className="font-semibold">
+                          {articles.length === 0 ? "Aucun article enregistre" : "Aucun resultat"}
+                        </p>
+                        <p className="text-sm mt-1">
+                          {articles.length === 0 ? "Ajoute tes cahiers, bics, sacs..." : "Essaie un autre mot ou une autre categorie"}
+                        </p>
                       </div>
                     ) : (
                       <div className="divide-y divide-gray-50">
-                        {[...articles].sort((a,b) => (a.nom||"").localeCompare(b.nom||"")).map(a => {
+                        {articlesFiltres.map(a => {
                           const stock = Number(a.stock || 0);
-                          const marge = Number(a.prixVente || 0) - Number(a.prixAchat || 0);
+                          const pa = Number(a.prixAchat || 0);
+                          const pv = Number(a.prixVente || 0);
+                          const marge = pv - pa;
+                          const achatTotal = stock * pa;
+                          const reventeTotal = stock * pv;
                           return (
                             <div key={a.id} className="px-4 py-3">
                               <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -583,10 +671,10 @@ export default function Scolaire() {
                                   <p className="text-gray-400 text-xs">{a.categorie}</p>
                                   <div className="flex gap-3 mt-1 flex-wrap">
                                     <span className="text-xs text-gray-500">
-                                      Achat : <b>{formatPrix(a.prixAchat || 0)}</b>
+                                      Achat : <b>{formatPrix(pa)}</b>
                                     </span>
                                     <span className="text-xs text-gray-500">
-                                      Vente indicatif : <b className="text-green-600">{formatPrix(a.prixVente || 0)}</b>
+                                      Vente : <b className="text-green-600">{formatPrix(pv)}</b>
                                     </span>
                                     <span className={`text-xs ${marge > 0 ? "text-indigo-600" : "text-gray-400"}`}>
                                       Marge : <b>{formatPrix(marge)}</b>
@@ -603,11 +691,28 @@ export default function Scolaire() {
                                     </p>
                                   )}
                                   <p className="text-gray-400 text-xs">en stock</p>
-                                  <p className="text-purple-600 text-xs font-bold mt-0.5">
-                                    {formatPrix(stock * Number(a.prixVente || 0))}
-                                  </p>
                                 </div>
                               </div>
+
+                              {/* Totaux de la ligne */}
+                              {stock > 0 && (
+                                <div className="flex gap-4 mt-2 pt-2 border-t border-gray-50 flex-wrap">
+                                  <div>
+                                    <span className="text-xs text-gray-400">Achat total : </span>
+                                    <span className="text-xs font-black text-gray-700">{formatPrix(achatTotal)}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-xs text-gray-400">Revente : </span>
+                                    <span className="text-xs font-black text-purple-600">{formatPrix(reventeTotal)}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-xs text-gray-400">Gain potentiel : </span>
+                                    <span className={`text-xs font-black ${reventeTotal - achatTotal >= 0 ? "text-indigo-600" : "text-red-500"}`}>
+                                      {formatPrix(reventeTotal - achatTotal)}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
 
                               <div className="flex gap-2 mt-2 flex-wrap">
                                 <button onClick={() => { setShowReappro(a.id); setReapproQte(""); }}
@@ -629,10 +734,22 @@ export default function Scolaire() {
                       </div>
                     )}
 
-                    {articles.length > 0 && (
-                      <div className="p-4 border-t border-gray-100 flex justify-between bg-purple-50">
-                        <span className="font-bold text-sm text-purple-700">Valeur totale du stock</span>
-                        <span className="font-black text-purple-700">{formatPrix(valeurStock)}</span>
+                    {articlesFiltres.length > 0 && (
+                      <div className="p-4 border-t border-gray-100 bg-gray-50 space-y-1">
+                        <div className="flex justify-between">
+                          <span className="font-bold text-sm text-gray-700">Achat total</span>
+                          <span className="font-black text-gray-800">{formatPrix(achatStockFiltree)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="font-bold text-sm text-purple-700">Valeur de revente</span>
+                          <span className="font-black text-purple-700">{formatPrix(valeurStockFiltree)}</span>
+                        </div>
+                        <div className="flex justify-between pt-1 border-t border-gray-200">
+                          <span className="font-bold text-sm text-indigo-700">Gain potentiel</span>
+                          <span className="font-black text-indigo-700">
+                            {formatPrix(valeurStockFiltree - achatStockFiltree)}
+                          </span>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -664,19 +781,39 @@ export default function Scolaire() {
                     </div>
                   )}
 
+                  {/* Recherche dans l'historique */}
+                  <div className="bg-white rounded-xl border border-gray-200 p-4 mb-5">
+                    <input
+                      value={rechercheVentes}
+                      onChange={e => setRechercheVentes(e.target.value)}
+                      placeholder="Rechercher par article ou par client..."
+                      className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400"
+                    />
+                    {rechercheVentes && (
+                      <p className="text-xs text-gray-500 mt-2">
+                        {ventesFiltrees.length} resultat(s) — total {formatPrix(totalVentesFiltrees)}
+                      </p>
+                    )}
+                  </div>
+
                   <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                     <div className="p-4 border-b border-gray-100 flex items-center justify-between">
-                      <h3 className="font-bold text-base">Historique des ventes</h3>
+                      <h3 className="font-bold text-base">
+                        Historique des ventes
+                        <span className="text-gray-400 font-normal ml-2 text-sm">({ventesFiltrees.length})</span>
+                      </h3>
                       <button onClick={() => setShowVenteForm(true)}
                         className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">
                         + Vente
                       </button>
                     </div>
-                    {ventes.length === 0 ? (
-                      <div className="text-center py-12 text-gray-400">Aucune vente enregistree</div>
+                    {ventesFiltrees.length === 0 ? (
+                      <div className="text-center py-12 text-gray-400">
+                        {ventes.length === 0 ? "Aucune vente enregistree" : "Aucun resultat pour cette recherche"}
+                      </div>
                     ) : (
                       <div className="divide-y divide-gray-50">
-                        {[...ventes].sort((a,b) => (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0)).map(v => (
+                        {ventesFiltrees.map(v => (
                           <div key={v.id} className="flex items-center justify-between px-4 py-3">
                             <div>
                               <p className="font-medium text-sm">{v.articleNom} x{v.quantite}</p>
@@ -695,8 +832,12 @@ export default function Scolaire() {
                       </div>
                     )}
                     <div className="p-4 border-t border-gray-100 flex justify-between bg-green-50">
-                      <span className="font-bold text-sm text-green-700">Total general</span>
-                      <span className="font-black text-green-700">{formatPrix(totalRecettesGlobal)}</span>
+                      <span className="font-bold text-sm text-green-700">
+                        {rechercheVentes ? "Total de la recherche" : "Total general"}
+                      </span>
+                      <span className="font-black text-green-700">
+                        {formatPrix(rechercheVentes ? totalVentesFiltrees : totalRecettesGlobal)}
+                      </span>
                     </div>
                   </div>
                 </>
@@ -786,20 +927,6 @@ export default function Scolaire() {
                 </div>
               </div>
 
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
-                <p className="text-blue-700 text-xs">
-                  Le prix de vente sert de valeur par defaut. Tu pourras le modifier a chaque vente.
-                </p>
-              </div>
-
-              {articleForm.prixAchat && articleForm.prixVente && (
-                <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3">
-                  <p className="text-indigo-700 text-sm font-bold">
-                    Marge indicative : {formatPrix(Number(articleForm.prixVente) - Number(articleForm.prixAchat))}
-                  </p>
-                </div>
-              )}
-
               <div>
                 <label className="text-sm text-gray-500 block mb-1">Quantite en stock</label>
                 <input type="number" value={articleForm.stock}
@@ -807,6 +934,24 @@ export default function Scolaire() {
                   className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400"
                   placeholder="50" />
               </div>
+
+              {articleForm.prixAchat && articleForm.stock && (
+                <div className="bg-gray-100 border border-gray-300 rounded-xl p-3 space-y-1">
+                  <p className="text-gray-700 text-sm font-bold">
+                    Achat total : {formatPrix(Number(articleForm.prixAchat) * Number(articleForm.stock))}
+                  </p>
+                  {articleForm.prixVente && (
+                    <>
+                      <p className="text-purple-700 text-sm font-bold">
+                        Revente estimee : {formatPrix(Number(articleForm.prixVente) * Number(articleForm.stock))}
+                      </p>
+                      <p className="text-indigo-700 text-sm font-bold">
+                        Gain potentiel : {formatPrix((Number(articleForm.prixVente) - Number(articleForm.prixAchat)) * Number(articleForm.stock))}
+                      </p>
+                    </>
+                  )}
+                </div>
+              )}
 
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => { setShowArticleForm(false); setEditingArticle(null); }}
@@ -827,7 +972,8 @@ export default function Scolaire() {
           <div className="bg-white rounded-t-2xl md:rounded-2xl p-6 w-full md:max-w-md max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <h3 className="font-black text-lg">Nouvelle vente</h3>
-              <button onClick={() => setShowVenteForm(false)} className="text-gray-400 text-xl">X</button>
+              <button onClick={() => { setShowVenteForm(false); setRechercheArticleVente(""); }}
+                className="text-gray-400 text-xl">X</button>
             </div>
 
             {articles.length === 0 ? (
@@ -840,87 +986,120 @@ export default function Scolaire() {
               </div>
             ) : (
               <form onSubmit={ajouterVente} className="space-y-4">
-                <div>
-                  <label className="text-sm text-gray-500 block mb-1">Article vendu</label>
-                  <select name="articleId" value={venteForm.articleId} onChange={handleVenteChange} required
-                    className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400 bg-white">
-                    <option value="">-- Choisir un article --</option>
-                    {articles.map(a => (
-                      <option key={a.id} value={a.id} disabled={Number(a.stock || 0) === 0}>
-                        {a.nom} ({a.stock} en stock)
-                      </option>
-                    ))}
-                  </select>
-                </div>
 
-                {articleChoisi && (
-                  <div className={`border rounded-xl p-3 ${Number(articleChoisi.stock) <= 5 ? "bg-orange-50 border-orange-200" : "bg-blue-50 border-blue-200"}`}>
-                    <p className={`text-sm font-bold ${Number(articleChoisi.stock) <= 5 ? "text-orange-700" : "text-blue-700"}`}>
-                      Stock disponible : {articleChoisi.stock} unite(s)
-                    </p>
-                    <p className={`text-xs mt-0.5 ${Number(articleChoisi.stock) <= 5 ? "text-orange-500" : "text-blue-500"}`}>
-                      Prix d'achat : {formatPrix(articleChoisi.prixAchat || 0)} — indicatif de vente : {formatPrix(articleChoisi.prixVente || 0)}
-                    </p>
+                {/* Selection article avec recherche */}
+                {!articleChoisi ? (
+                  <div>
+                    <label className="text-sm text-gray-500 block mb-1">Rechercher l'article</label>
+                    <input
+                      value={rechercheArticleVente}
+                      onChange={e => setRechercheArticleVente(e.target.value)}
+                      placeholder="Tape les premieres lettres..."
+                      autoFocus
+                      className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400"
+                    />
+                    <div className="mt-2 border border-gray-100 rounded-xl max-h-60 overflow-y-auto divide-y divide-gray-50">
+                      {articlesPourVente.length === 0 ? (
+                        <p className="text-center py-6 text-gray-400 text-sm">Aucun article trouve</p>
+                      ) : (
+                        articlesPourVente.map(a => {
+                          const stock = Number(a.stock || 0);
+                          return (
+                            <button
+                              key={a.id}
+                              type="button"
+                              disabled={stock === 0}
+                              onClick={() => choisirArticleVente(a)}
+                              className={`w-full text-left px-3 py-2.5 transition ${stock === 0 ? "opacity-40 cursor-not-allowed" : "hover:bg-gray-50"}`}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="font-medium text-sm truncate">{a.nom}</p>
+                                  <p className="text-gray-400 text-xs">
+                                    {a.categorie} — {formatPrix(a.prixVente || 0)}
+                                  </p>
+                                </div>
+                                <span className={`text-xs font-bold flex-shrink-0 ${stock === 0 ? "text-red-500" : stock <= 5 ? "text-orange-500" : "text-gray-500"}`}>
+                                  {stock === 0 ? "Rupture" : `${stock} en stock`}
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-bold text-sm text-blue-900">{articleChoisi.nom}</p>
+                      <p className="text-blue-600 text-xs mt-0.5">
+                        Stock : {articleChoisi.stock} — achat {formatPrix(articleChoisi.prixAchat || 0)}
+                      </p>
+                    </div>
+                    <button type="button"
+                      onClick={() => { setVenteForm(VENTE_VIDE); setRechercheArticleVente(""); }}
+                      className="text-blue-500 hover:text-blue-700 text-xs font-bold flex-shrink-0">
+                      Changer
+                    </button>
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm text-gray-500 block mb-1">Quantite</label>
-                    <input type="number" name="quantite" value={venteForm.quantite}
-                      onChange={handleVenteChange} required min="1"
-                      max={articleChoisi ? articleChoisi.stock : undefined}
-                      className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400"
-                      placeholder="1" />
-                  </div>
-                  <div>
-                    <label className="text-sm text-gray-500 block mb-1">
-                      Prix de vente <span className="text-orange-500 font-bold">*</span>
-                    </label>
-                    <input type="number" name="prixUnitaire" value={venteForm.prixUnitaire}
-                      onChange={handleVenteChange} required min="1"
-                      className="w-full border-2 border-orange-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-orange-500 font-bold"
-                      placeholder="500" />
-                  </div>
-                </div>
-                <p className="text-xs text-gray-400 -mt-2">
-                  Le prix est pre-rempli avec l'indicatif de l'article — ajuste-le selon le client.
-                </p>
+                {articleChoisi && (
+                  <>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-sm text-gray-500 block mb-1">Quantite</label>
+                        <input type="number" name="quantite" value={venteForm.quantite}
+                          onChange={handleVenteChange} required min="1"
+                          max={articleChoisi.stock}
+                          className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400"
+                          placeholder="1" />
+                      </div>
+                      <div>
+                        <label className="text-sm text-gray-500 block mb-1">
+                          Prix de vente <span className="text-orange-500 font-bold">*</span>
+                        </label>
+                        <input type="number" name="prixUnitaire" value={venteForm.prixUnitaire}
+                          onChange={handleVenteChange} required min="1"
+                          className="w-full border-2 border-orange-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-orange-500 font-bold"
+                          placeholder="500" />
+                      </div>
+                    </div>
 
-                <div>
-                  <label className="text-sm text-gray-500 block mb-1">Nom du client — optionnel</label>
-                  <input name="client" value={venteForm.client} onChange={handleVenteChange}
-                    className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400"
-                    placeholder="Ex: Fatou Sow" />
-                </div>
+                    <div>
+                      <label className="text-sm text-gray-500 block mb-1">Nom du client — optionnel</label>
+                      <input name="client" value={venteForm.client} onChange={handleVenteChange}
+                        className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400"
+                        placeholder="Ex: Fatou Sow" />
+                    </div>
 
-                <div className="bg-green-50 border border-green-200 rounded-xl p-3">
-                  <label className="text-sm text-green-700 font-bold block mb-1">Montant total (FCFA)</label>
-                  <input type="number" name="montant" value={venteForm.montant}
-                    onChange={handleVenteChange} required min="1"
-                    className="w-full border border-green-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-green-400 bg-white font-bold text-green-700" />
-                  <p className="text-xs text-green-500 mt-1">
-                    Quantite x prix de vente — modifiable aussi
-                  </p>
-                </div>
+                    <div className="bg-green-50 border border-green-200 rounded-xl p-3">
+                      <label className="text-sm text-green-700 font-bold block mb-1">Montant total (FCFA)</label>
+                      <input type="number" name="montant" value={venteForm.montant}
+                        onChange={handleVenteChange} required min="1"
+                        className="w-full border border-green-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-green-400 bg-white font-bold text-green-700" />
+                    </div>
 
-                {articleChoisi && venteForm.prixUnitaire && venteForm.quantite && (
-                  <div className={`border rounded-xl p-3 ${margeVente >= 0 ? "bg-indigo-50 border-indigo-200" : "bg-red-50 border-red-200"}`}>
-                    <p className={`text-sm font-bold ${margeVente >= 0 ? "text-indigo-700" : "text-red-700"}`}>
-                      Marge sur cette vente : {margeVente >= 0 ? "+" : ""}{formatPrix(margeVente)}
-                    </p>
-                    {margeVente < 0 && (
-                      <p className="text-xs text-red-500 mt-0.5">
-                        Attention : tu vends en dessous du prix d'achat
-                      </p>
+                    {venteForm.prixUnitaire && venteForm.quantite && (
+                      <div className={`border rounded-xl p-3 ${margeVente >= 0 ? "bg-indigo-50 border-indigo-200" : "bg-red-50 border-red-200"}`}>
+                        <p className={`text-sm font-bold ${margeVente >= 0 ? "text-indigo-700" : "text-red-700"}`}>
+                          Marge sur cette vente : {margeVente >= 0 ? "+" : ""}{formatPrix(margeVente)}
+                        </p>
+                        {margeVente < 0 && (
+                          <p className="text-xs text-red-500 mt-0.5">
+                            Attention : tu vends en dessous du prix d'achat
+                          </p>
+                        )}
+                      </div>
                     )}
-                  </div>
+                  </>
                 )}
 
                 <div className="flex gap-3 pt-2">
-                  <button type="button" onClick={() => setShowVenteForm(false)}
+                  <button type="button" onClick={() => { setShowVenteForm(false); setRechercheArticleVente(""); }}
                     className="flex-1 border border-gray-200 text-gray-600 py-3 rounded-lg font-medium">Annuler</button>
-                  <button type="submit" disabled={saving}
+                  <button type="submit" disabled={saving || !articleChoisi}
                     className="flex-1 bg-green-600 text-white py-3 rounded-lg font-medium hover:bg-green-700 disabled:opacity-50">
                     {saving ? "Enregistrement..." : "Valider la vente"}
                   </button>
@@ -952,9 +1131,14 @@ export default function Scolaire() {
                   placeholder="20" autoFocus />
               </div>
               {reapproQte && (
-                <p className="text-sm text-green-600 font-bold">
-                  Nouveau stock : {Number(articles.find(a => a.id === showReappro)?.stock || 0) + Number(reapproQte)}
-                </p>
+                <div className="bg-green-50 border border-green-200 rounded-xl p-3 space-y-1">
+                  <p className="text-sm text-green-700 font-bold">
+                    Nouveau stock : {Number(articles.find(a => a.id === showReappro)?.stock || 0) + Number(reapproQte)}
+                  </p>
+                  <p className="text-xs text-green-600">
+                    Cout de ce reappro : {formatPrix(Number(articles.find(a => a.id === showReappro)?.prixAchat || 0) * Number(reapproQte))}
+                  </p>
+                </div>
               )}
               <div className="flex gap-3">
                 <button type="button" onClick={() => setShowReappro(null)}
