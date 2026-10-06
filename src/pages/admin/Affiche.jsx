@@ -21,7 +21,9 @@ const NAV_LINKS = [
 ];
 
 const BLEU = "#0B2447";
+const BLEU_CLAIR = "#19376D";
 const ORANGE = "#F97316";
+const ORANGE_PALE = "#FFF4EC";
 
 function Sidebar() {
   return (
@@ -75,6 +77,7 @@ export default function Affiche() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [selection, setSelection] = useState([]);
+  const [titre, setTitre] = useState("RENTREE SCOLAIRE 2026");
   const afficheRef = useRef(null);
 
   useEffect(() => { charger(); }, []);
@@ -95,10 +98,9 @@ export default function Affiche() {
     .filter(a => selection.includes(a.id))
     .sort((a, b) => Number(a.prixVente || 0) - Number(b.prixVente || 0));
 
-  // Decoupe en deux colonnes equilibrees
   const moitie = Math.ceil(articlesAffiche.length / 2);
-  const colonneGauche = articlesAffiche.slice(0, moitie);
-  const colonneDroite = articlesAffiche.slice(moitie);
+  const colG = articlesAffiche.slice(0, moitie);
+  const colD = articlesAffiche.slice(moitie);
 
   async function telechargerImage() {
     if (!afficheRef.current) return;
@@ -125,28 +127,44 @@ export default function Affiche() {
     const lignes = articlesAffiche
       .map(a => `• ${a.nom} — ${Number(a.prixVente || 0).toLocaleString("fr-SN")} FCFA`)
       .join("\n");
-    const texte = `*B2S-STORE — FOURNITURES SCOLAIRES*\n\n${lignes}\n\nCommandez : https://b2s-store.vercel.app\nWhatsApp : +221 76 873 07 31`;
+    const texte = `*B2S-STORE — ${titre}*\n\n${lignes}\n\nLivraison rapide a Dakar\nCommandez : https://b2s-store.vercel.app\nWhatsApp : +221 76 873 07 31`;
     window.open(`https://wa.me/?text=${encodeURIComponent(texte)}`, "_blank");
   }
 
-  // Une ligne de produit dans l'affiche
-  const Ligne = ({ a }) => (
+  // Carte produit de l'affiche
+  const Carte = ({ a }) => (
     <div style={{
       display: "flex",
-      alignItems: "baseline",
-      gap: "6px",
-      padding: "7px 0",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: "10px",
+      background: "#F8FAFC",
+      border: "1px solid #E2E8F0",
+      borderLeft: `4px solid ${ORANGE}`,
+      borderRadius: "10px",
+      padding: "11px 14px",
+      marginBottom: "9px",
     }}>
-      <span style={{ fontSize: "15px", color: "#1f2937", fontWeight: 500, whiteSpace: "nowrap" }}>
+      <span style={{
+        fontSize: "14px",
+        color: "#0F172A",
+        fontWeight: 600,
+        lineHeight: 1.25,
+        minWidth: 0,
+        flex: 1,
+      }}>
         {a.nom}
       </span>
       <span style={{
-        flex: 1,
-        borderBottom: "1px dotted #cbd5e1",
-        minWidth: "12px",
-        transform: "translateY(-3px)",
-      }} />
-      <span style={{ fontSize: "16px", fontWeight: 900, color: BLEU, whiteSpace: "nowrap" }}>
+        background: ORANGE,
+        color: "#ffffff",
+        fontSize: "14px",
+        fontWeight: 900,
+        padding: "6px 12px",
+        borderRadius: "999px",
+        whiteSpace: "nowrap",
+        flexShrink: 0,
+      }}>
         {Number(a.prixVente || 0).toLocaleString("fr-SN")} F
       </span>
     </div>
@@ -177,8 +195,15 @@ export default function Affiche() {
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
 
-              {/* ===== SELECTION ===== */}
+              {/* ===== PANNEAU GAUCHE ===== */}
               <div className="lg:col-span-2 space-y-4">
+
+                <div className="bg-white rounded-xl border border-gray-200 p-4">
+                  <label className="text-sm text-gray-500 block mb-1">Titre de l'affiche</label>
+                  <input value={titre} onChange={e => setTitre(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400 font-bold" />
+                </div>
+
                 <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                   <div className="p-4 border-b border-gray-100 flex items-center justify-between">
                     <h3 className="font-bold text-sm">
@@ -196,7 +221,7 @@ export default function Affiche() {
                     </button>
                   </div>
 
-                  <div className="max-h-[32rem] overflow-y-auto divide-y divide-gray-50">
+                  <div className="max-h-[30rem] overflow-y-auto divide-y divide-gray-50">
                     {[...articles]
                       .sort((a, b) => (a.nom || "").localeCompare(b.nom || ""))
                       .map(a => {
@@ -232,6 +257,13 @@ export default function Affiche() {
                   className="w-full bg-green-600 text-white py-3.5 rounded-xl font-bold hover:bg-green-700 transition disabled:opacity-40">
                   Envoyer la liste sur WhatsApp
                 </button>
+
+                {articlesAffiche.length > 16 && (
+                  <p className="text-xs text-orange-600 bg-orange-50 border border-orange-200 rounded-lg p-3">
+                    Tu as {articlesAffiche.length} articles coches. Au-dela de 16, l'affiche devient
+                    longue et moins lisible — pense a en faire plusieurs par categorie.
+                  </p>
+                )}
               </div>
 
               {/* ===== APERCU ===== */}
@@ -241,75 +273,143 @@ export default function Affiche() {
 
                   <div ref={afficheRef}
                     style={{
-                      width: "700px",
+                      width: "760px",
                       background: "#ffffff",
                       fontFamily: "Arial, Helvetica, sans-serif",
                     }}>
 
-                    {/* Bandeau haut */}
-                    <div style={{ background: BLEU, padding: "32px 44px", textAlign: "center" }}>
-                      <img src="/logo.jpeg" alt="B2S-STORE" crossOrigin="anonymous"
-                        style={{
-                          height: "72px", width: "auto",
-                          borderRadius: "10px", background: "#fff",
-                          padding: "4px", marginBottom: "16px",
-                        }} />
-                      <p style={{
-                        fontSize: "38px", fontWeight: 900, margin: 0,
-                        color: "#ffffff", letterSpacing: "2px", lineHeight: 1,
-                      }}>
-                        B2S-STORE
-                      </p>
+                    {/* ===== EN-TETE ===== */}
+                    <div style={{
+                      background: `linear-gradient(135deg, ${BLEU} 0%, ${BLEU_CLAIR} 100%)`,
+                      padding: "34px 48px 30px",
+                      position: "relative",
+                      overflow: "hidden",
+                    }}>
+                      {/* Cercles decoratifs */}
                       <div style={{
-                        width: "60px", height: "4px", background: ORANGE,
-                        margin: "16px auto 14px", borderRadius: "2px",
+                        position: "absolute", top: "-60px", right: "-40px",
+                        width: "180px", height: "180px", borderRadius: "50%",
+                        background: "rgba(249,115,22,0.18)",
                       }} />
-                      <p style={{
-                        fontSize: "17px", fontWeight: 700, margin: 0,
-                        color: ORANGE, letterSpacing: "4px",
-                      }}>
-                        FOURNITURES SCOLAIRES
-                      </p>
+                      <div style={{
+                        position: "absolute", bottom: "-70px", left: "-50px",
+                        width: "160px", height: "160px", borderRadius: "50%",
+                        background: "rgba(255,255,255,0.06)",
+                      }} />
+
+                      <div style={{ position: "relative", display: "flex", alignItems: "center", gap: "20px" }}>
+                        <img src="/logo.jpeg" alt="B2S-STORE" crossOrigin="anonymous"
+                          style={{
+                            height: "82px", width: "82px", objectFit: "contain",
+                            borderRadius: "14px", background: "#fff", padding: "6px",
+                            flexShrink: 0,
+                          }} />
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{
+                            display: "inline-block", background: ORANGE,
+                            padding: "5px 14px", borderRadius: "999px", marginBottom: "9px",
+                          }}>
+                            <span style={{
+                              fontSize: "11px", fontWeight: 900, color: "#fff",
+                              letterSpacing: "2px",
+                            }}>
+                              {titre.toUpperCase()}
+                            </span>
+                          </div>
+                          <p style={{
+                            fontSize: "40px", fontWeight: 900, margin: 0,
+                            color: "#ffffff", letterSpacing: "1px", lineHeight: 1,
+                          }}>
+                            B2S-STORE
+                          </p>
+                          <p style={{
+                            fontSize: "14px", margin: "8px 0 0",
+                            color: ORANGE, fontWeight: 700, letterSpacing: "3px",
+                          }}>
+                            FOURNITURES SCOLAIRES
+                          </p>
+                        </div>
+                      </div>
                     </div>
 
-                    {/* Liste produits */}
-                    <div style={{ padding: "32px 44px 24px" }}>
+                    {/* ===== PRODUITS ===== */}
+                    <div style={{ padding: "28px 48px 22px", background: "#ffffff" }}>
                       {articlesAffiche.length === 0 ? (
-                        <p style={{ textAlign: "center", color: "#9ca3af", padding: "50px 0", fontSize: "15px" }}>
+                        <p style={{ textAlign: "center", color: "#9ca3af", padding: "60px 0", fontSize: "15px" }}>
                           Coche des articles pour les voir ici
                         </p>
                       ) : (
-                        <div style={{ display: "flex", gap: "40px" }}>
-                          <div style={{ flex: 1 }}>
-                            {colonneGauche.map(a => <Ligne key={a.id} a={a} />)}
+                        <div style={{ display: "flex", gap: "18px", alignItems: "flex-start" }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            {colG.map(a => <Carte key={a.id} a={a} />)}
                           </div>
-                          {colonneDroite.length > 0 && (
-                            <div style={{ flex: 1 }}>
-                              {colonneDroite.map(a => <Ligne key={a.id} a={a} />)}
+                          {colD.length > 0 && (
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              {colD.map(a => <Carte key={a.id} a={a} />)}
                             </div>
                           )}
                         </div>
                       )}
                     </div>
 
-                    {/* Bandeau orange */}
-                    <div style={{ background: ORANGE, padding: "14px 44px", textAlign: "center" }}>
-                      <p style={{
-                        fontSize: "15px", fontWeight: 900, margin: 0,
-                        color: BLEU, letterSpacing: "0.5px",
-                      }}>
-                        Livraison rapide a Dakar — Paiement a la livraison
-                      </p>
+                    {/* ===== ARGUMENTS ===== */}
+                    <div style={{
+                      background: ORANGE_PALE,
+                      padding: "16px 48px",
+                      display: "flex",
+                      justifyContent: "space-around",
+                      gap: "12px",
+                      borderTop: `2px solid ${ORANGE}`,
+                      borderBottom: `2px solid ${ORANGE}`,
+                    }}>
+                      {[
+                        "Livraison rapide a Dakar",
+                        "Paiement a la livraison",
+                        "Prix imbattables",
+                      ].map(txt => (
+                        <span key={txt} style={{
+                          fontSize: "13px", fontWeight: 800, color: BLEU,
+                          textAlign: "center",
+                        }}>
+                          {txt}
+                        </span>
+                      ))}
                     </div>
 
-                    {/* Pied de page */}
-                    <div style={{ background: BLEU, padding: "24px 44px", textAlign: "center", color: "#fff" }}>
-                      <p style={{ fontSize: "26px", fontWeight: 900, margin: 0, letterSpacing: "1px" }}>
-                        76 873 07 31
-                      </p>
-                      <p style={{ fontSize: "13px", margin: "8px 0 0", opacity: 0.85 }}>
-                        Mbed Fass Yeumbeul, Dakar &nbsp;•&nbsp; b2s-store.vercel.app
-                      </p>
+                    {/* ===== PIED DE PAGE ===== */}
+                    <div style={{
+                      background: BLEU,
+                      padding: "26px 48px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "20px",
+                    }}>
+                      <div>
+                        <p style={{
+                          fontSize: "10px", margin: 0, color: ORANGE,
+                          fontWeight: 900, letterSpacing: "2px",
+                        }}>
+                          COMMANDEZ MAINTENANT
+                        </p>
+                        <p style={{
+                          fontSize: "32px", fontWeight: 900, margin: "5px 0 0",
+                          color: "#ffffff", letterSpacing: "1px", lineHeight: 1,
+                        }}>
+                          76 873 07 31
+                        </p>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <p style={{ fontSize: "13px", margin: 0, color: "#ffffff", fontWeight: 700 }}>
+                          b2s-store.vercel.app
+                        </p>
+                        <p style={{ fontSize: "12px", margin: "5px 0 0", color: "rgba(255,255,255,0.75)" }}>
+                          Mbed Fass Yeumbeul, Dakar
+                        </p>
+                        <p style={{ fontSize: "12px", margin: "2px 0 0", color: ORANGE, fontWeight: 800 }}>
+                          Ouvert 24h/24 — 7j/7
+                        </p>
+                      </div>
                     </div>
 
                   </div>
