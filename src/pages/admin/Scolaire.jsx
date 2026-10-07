@@ -3,6 +3,8 @@ import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp
 import { db } from "../../firebase/config";
 import { Link } from "react-router-dom";
 import { formatPrix } from "../../utils/format";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 
 const NAV_LINKS = [
   { to: "/admin", label: "Dashboard" },
@@ -14,6 +16,7 @@ const NAV_LINKS = [
   { to: "/admin/stock", label: "Valeur du stock" },
   { to: "/admin/photocopie", label: "Photocopie" },
   { to: "/admin/scolaire", label: "Fournitures scolaires", active: true },
+  { to: "/admin/affiche", label: "Affiche publicitaire" },
   { to: "/admin/associes", label: "Associes" },
   { to: "/shop", label: "Voir la boutique" },
 ];
@@ -79,23 +82,223 @@ function MobileNav({ open, setOpen }) {
 }
 
 function formatDate(ts) {
-  if (!ts?.seconds) return "-";
-  return new Date(ts.seconds * 1000).toLocaleDateString("fr-SN", {
-    day: "2-digit", month: "short", year: "numeric"
-  });
+  if (!ts) return "-";
+  const d = ts.seconds ? new Date(ts.seconds * 1000) : new Date(ts);
+  if (isNaN(d)) return "-";
+  return d.toLocaleDateString("fr-SN", { day: "2-digit", month: "short", year: "numeric" });
 }
 
-// Recherche insensible aux accents et a la casse
+function formatDateLongue(ts) {
+  if (!ts) return "-";
+  const d = ts.seconds ? new Date(ts.seconds * 1000) : new Date(ts);
+  if (isNaN(d)) return "-";
+  return d.toLocaleDateString("fr-SN", { day: "2-digit", month: "long", year: "numeric" });
+}
+
 function normalise(str) {
-  return String(str || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
+  return String(str || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+// Nettoie les accents pour jsPDF
+function clean(str) {
+  if (!str && str !== 0) return "";
+  return String(str)
+    .replace(/[éèêë]/g, "e").replace(/[àâä]/g, "a").replace(/[ùûü]/g, "u")
+    .replace(/[îï]/g, "i").replace(/[ôö]/g, "o").replace(/ç/g, "c")
+    .replace(/[ÉÈÊË]/g, "E").replace(/[ÀÂÄ]/g, "A").replace(/[ÙÛÜ]/g, "U")
+    .replace(/[ÎÏ]/g, "I").replace(/[ÔÖ]/g, "O").replace(/Ç/g, "C")
+    .replace(/[’‘]/g, "'").replace(/[«»]/g, '"');
+}
+
+function montantTexte(n) {
+  return Number(n || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " FCFA";
+}
+
+// Rend compatible les anciennes ventes (un seul article) et les nouvelles (plusieurs)
+function normaliserVente(v) {
+  if (Array.isArray(v.articles) && v.articles.length > 0) {
+    const total = Number(v.total ?? v.articles.reduce((a, x) => a + Number(x.montant || 0), 0));
+    return { ...v, articles: v.articles, total };
+  }
+  return {
+    ...v,
+    articles: [{
+      articleId: v.articleId || null,
+      nom: v.articleNom || "Article",
+      categorie: v.categorie || "",
+      quantite: Number(v.quantite || 0),
+      prixUnitaire: Number(v.prixUnitaire || 0),
+      prixAchatUnitaire: Number(v.prixAchatUnitaire || 0),
+      montant: Number(v.montant || 0),
+    }],
+    total: Number(v.total ?? v.montant ?? 0),
+  };
+}
+
+function margeVenteTotale(v) {
+  return v.articles.reduce(
+    (a, x) => a + (Number(x.prixUnitaire || 0) - Number(x.prixAchatUnitaire || 0)) * Number(x.quantite || 0),
+    0
+  );
+}
+
+function numeroFacture(v) {
+  const d = v.createdAt?.seconds ? new Date(v.createdAt.seconds * 1000) : new Date();
+  const an = d.getFullYear();
+  const mois = String(d.getMonth() + 1).padStart(2, "0");
+  const suffixe = String(v.id || "").slice(-5).toUpperCase();
+  return `FA-${an}${mois}-${suffixe}`;
+}
+
+// ===== FACTURE PDF =====
+async function genererFacture(vente) {
+  const v = normaliserVente(vente);
+  const docu = new jsPDF();
+
+  const NOIR = [26, 26, 24];
+  const GRIS = [107, 107, 101];
+  const GRIS_CLAIR = [245, 244, 240];
+  const VERT = [34, 139, 34];
+  const ORANGE = [249, 115, 22];
+
+  // Bandeau
+  docu.setFillColor(...NOIR);
+  docu.rect(0, 0, 210, 48, "F");
+
+  try {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    await new Promise((res, rej) => {
+      img.onload = res;
+      img.onerror = rej;
+      img.src = "https://res.cloudinary.com/dy2tgofmf/image/upload/logo_k9rogt";
+    });
+    const cv = document.createElement("canvas");
+    cv.width = img.width; cv.height = img.height;
+    cv.getContext("2d").drawImage(img, 0, 0);
+    docu.addImage(cv.toDataURL("image/jpeg"), "JPEG", 12, 9, 30, 30);
+  } catch {}
+
+  docu.setTextColor(255, 255, 255);
+  docu.setFont("helvetica", "bold");
+  docu.setFontSize(19);
+  docu.text("B2S-STORE", 48, 20);
+  docu.setFont("helvetica", "normal");
+  docu.setFontSize(8.5);
+  docu.text("Fournitures scolaires & articles divers", 48, 27);
+  docu.text("Mbed Fass Yeumbeul, Dakar, Senegal", 48, 33);
+  docu.text("+221 76 873 07 31  |  syllaissa875@gmail.com", 48, 39);
+
+  docu.setFont("helvetica", "bold");
+  docu.setFontSize(18);
+  docu.text("FACTURE", 198, 19, { align: "right" });
+  docu.setFont("helvetica", "normal");
+  docu.setFontSize(9);
+  docu.text(clean(numeroFacture(v)), 198, 27, { align: "right" });
+  docu.text(clean(formatDateLongue(v.createdAt)), 198, 33, { align: "right" });
+
+  // Badge paye
+  docu.setFillColor(...VERT);
+  docu.roundedRect(160, 37, 38, 8, 2, 2, "F");
+  docu.setTextColor(255, 255, 255);
+  docu.setFont("helvetica", "bold");
+  docu.setFontSize(8);
+  docu.text("PAYE", 179, 42.5, { align: "center" });
+
+  // Bloc client
+  docu.setFillColor(...GRIS_CLAIR);
+  docu.rect(0, 53, 210, 26, "F");
+
+  docu.setTextColor(...GRIS);
+  docu.setFont("helvetica", "bold");
+  docu.setFontSize(8);
+  docu.text("CLIENT", 15, 62);
+
+  docu.setTextColor(...NOIR);
+  docu.setFont("helvetica", "bold");
+  docu.setFontSize(12);
+  docu.text(clean(v.client || "Client comptoir"), 15, 71);
+
+  docu.setFont("helvetica", "normal");
+  docu.setFontSize(9);
+  docu.setTextColor(...GRIS);
+  docu.text(`Date : ${clean(formatDateLongue(v.createdAt))}`, 140, 71);
+
+  // Tableau articles
+  autoTable(docu, {
+    startY: 87,
+    head: [["Designation", "Qte", "Prix unitaire", "Montant"]],
+    body: v.articles.map(a => [
+      clean(a.nom),
+      String(a.quantite),
+      montantTexte(a.prixUnitaire),
+      montantTexte(a.montant),
+    ]),
+    headStyles: {
+      fillColor: NOIR, textColor: [255, 255, 255],
+      fontStyle: "bold", fontSize: 9, cellPadding: 5,
+    },
+    bodyStyles: { fontSize: 9, cellPadding: 5, textColor: NOIR, overflow: "linebreak" },
+    alternateRowStyles: { fillColor: [250, 250, 248] },
+    columnStyles: {
+      0: { cellWidth: 85 },
+      1: { cellWidth: 20, halign: "center" },
+      2: { cellWidth: 37, halign: "right" },
+      3: { cellWidth: 38, halign: "right" },
+    },
+    margin: { left: 15, right: 15 },
+    styles: { lineColor: [225, 223, 219], lineWidth: 0.1 },
+  });
+
+  let y = docu.lastAutoTable.finalY + 12;
+
+  // Total
+  docu.setFillColor(...NOIR);
+  docu.rect(125, y, 70, 14, "F");
+  docu.setTextColor(255, 255, 255);
+  docu.setFont("helvetica", "bold");
+  docu.setFontSize(11);
+  docu.text("TOTAL", 131, y + 9);
+  docu.text(montantTexte(v.total), 190, y + 9, { align: "right" });
+
+  y += 24;
+
+  // Mention reglement
+  docu.setTextColor(...GRIS);
+  docu.setFont("helvetica", "normal");
+  docu.setFontSize(9);
+  docu.text(
+    `Facture acquittee le ${clean(formatDateLongue(v.createdAt))}. Montant recu : ${montantTexte(v.total)}.`,
+    15, y
+  );
+
+  // Pied de page
+  const h = docu.internal.pageSize.height;
+  docu.setFillColor(...GRIS_CLAIR);
+  docu.rect(0, h - 26, 210, 26, "F");
+  docu.setDrawColor(...ORANGE);
+  docu.setLineWidth(1.2);
+  docu.line(0, h - 26, 210, h - 26);
+
+  docu.setTextColor(...NOIR);
+  docu.setFont("helvetica", "bold");
+  docu.setFontSize(9);
+  docu.text("Merci de votre confiance !", 105, h - 16, { align: "center" });
+  docu.setFont("helvetica", "normal");
+  docu.setFontSize(8);
+  docu.setTextColor(...GRIS);
+  docu.text(
+    "B2S-STORE  |  Mbed Fass Yeumbeul, Dakar  |  +221 76 873 07 31  |  b2s-store.vercel.app",
+    105, h - 9, { align: "center" }
+  );
+
+  const nomFichier = clean(v.client || "client").replace(/\s+/g, "-").toLowerCase();
+  docu.save(`facture-${nomFichier}-${numeroFacture(v)}.pdf`);
 }
 
 const ARTICLE_VIDE = { nom: "", categorie: "Cahiers", prixAchat: "", prixVente: "", stock: "" };
-const VENTE_VIDE = { articleId: "", quantite: "1", prixUnitaire: "", montant: "", client: "" };
 const DEPENSE_VIDE = { description: "", montant: "", categorie: "Achat de stock" };
+const LIGNE_VIDE = { articleId: "", quantite: "1", prixUnitaire: "" };
 
 export default function Scolaire() {
   const [articles, setArticles] = useState([]);
@@ -109,18 +312,20 @@ export default function Scolaire() {
   const [moisSelectionne, setMoisSelectionne] = useState(new Date().getMonth());
   const [anneeSelectionnee, setAnneeSelectionnee] = useState(new Date().getFullYear());
 
-  // Recherches
   const [rechercheStock, setRechercheStock] = useState("");
   const [filtreCategorie, setFiltreCategorie] = useState("Tous");
   const [rechercheVentes, setRechercheVentes] = useState("");
-  const [rechercheArticleVente, setRechercheArticleVente] = useState("");
 
   const [showArticleForm, setShowArticleForm] = useState(false);
   const [editingArticle, setEditingArticle] = useState(null);
   const [articleForm, setArticleForm] = useState(ARTICLE_VIDE);
 
+  // ===== PANIER DE VENTE =====
   const [showVenteForm, setShowVenteForm] = useState(false);
-  const [venteForm, setVenteForm] = useState(VENTE_VIDE);
+  const [panier, setPanier] = useState([]);
+  const [clientVente, setClientVente] = useState("");
+  const [rechercheArticle, setRechercheArticle] = useState("");
+  const [ligne, setLigne] = useState(LIGNE_VIDE);
 
   const [showDepenseForm, setShowDepenseForm] = useState(false);
   const [depenseForm, setDepenseForm] = useState(DEPENSE_VIDE);
@@ -158,11 +363,8 @@ export default function Scolaire() {
   function ouvrirEditArticle(a) {
     setEditingArticle(a.id);
     setArticleForm({
-      nom: a.nom || "",
-      categorie: a.categorie || "Cahiers",
-      prixAchat: a.prixAchat || "",
-      prixVente: a.prixVente || "",
-      stock: a.stock ?? "",
+      nom: a.nom || "", categorie: a.categorie || "Cahiers",
+      prixAchat: a.prixAchat || "", prixVente: a.prixVente || "", stock: a.stock ?? "",
     });
     setShowArticleForm(true);
   }
@@ -198,9 +400,9 @@ export default function Scolaire() {
     e.preventDefault();
     setSaving(true);
     try {
-      const article = articles.find(a => a.id === showReappro);
+      const a = articles.find(x => x.id === showReappro);
       await updateDoc(doc(db, "scolaire_articles", showReappro), {
-        stock: Number(article.stock || 0) + Number(reapproQte),
+        stock: Number(a.stock || 0) + Number(reapproQte),
       });
       await charger();
       setShowReappro(null);
@@ -209,77 +411,124 @@ export default function Scolaire() {
     setSaving(false);
   }
 
-  // ===== VENTES =====
-  function choisirArticleVente(art) {
-    setVenteForm(f => {
-      const pu = String(art.prixVente || "");
-      const qte = Number(f.quantite) || 1;
-      return {
-        ...f,
-        articleId: art.id,
-        prixUnitaire: pu,
-        montant: pu ? String(qte * Number(pu)) : "",
-      };
-    });
-    setRechercheArticleVente("");
+  // ===== PANIER =====
+  function ouvrirVente() {
+    setPanier([]);
+    setClientVente("");
+    setLigne(LIGNE_VIDE);
+    setRechercheArticle("");
+    setShowVenteForm(true);
   }
 
-  function handleVenteChange(e) {
-    const { name, value } = e.target;
-    setVenteForm(f => {
-      const updated = { ...f, [name]: value };
-      const qte = Number(name === "quantite" ? value : updated.quantite);
-      const pu = Number(name === "prixUnitaire" ? value : updated.prixUnitaire);
-      if (qte > 0 && pu > 0) updated.montant = String(qte * pu);
-      return updated;
-    });
+  function choisirArticle(art) {
+    setLigne({ articleId: art.id, quantite: "1", prixUnitaire: String(art.prixVente || "") });
+    setRechercheArticle("");
   }
 
-  async function ajouterVente(e) {
-    e.preventDefault();
-    const article = articles.find(a => a.id === venteForm.articleId);
-    if (!article) { alert("Choisissez un article."); return; }
+  function ajouterAuPanier() {
+    const art = articles.find(a => a.id === ligne.articleId);
+    if (!art) return;
 
-    const qte = Number(venteForm.quantite);
-    if (qte > Number(article.stock || 0)) {
-      alert(`Stock insuffisant ! Il ne reste que ${article.stock} unite(s) de "${article.nom}".`);
+    const qte = Number(ligne.quantite);
+    const pu = Number(ligne.prixUnitaire);
+    if (qte < 1 || pu < 1) { alert("Quantite et prix doivent etre renseignes."); return; }
+
+    // Stock deja reserve dans le panier pour cet article
+    const dejaDansPanier = panier
+      .filter(l => l.articleId === art.id)
+      .reduce((a, l) => a + l.quantite, 0);
+
+    if (qte + dejaDansPanier > Number(art.stock || 0)) {
+      alert(
+        `Stock insuffisant pour "${art.nom}".\n` +
+        `Disponible : ${art.stock}\n` +
+        `Deja dans ce panier : ${dejaDansPanier}`
+      );
       return;
     }
 
+    setPanier(p => [...p, {
+      articleId: art.id,
+      nom: art.nom,
+      categorie: art.categorie || "",
+      quantite: qte,
+      prixUnitaire: pu,
+      prixAchatUnitaire: Number(art.prixAchat || 0),
+      montant: qte * pu,
+    }]);
+    setLigne(LIGNE_VIDE);
+  }
+
+  function retirerDuPanier(index) {
+    setPanier(p => p.filter((_, i) => i !== index));
+  }
+
+  const totalPanier = panier.reduce((a, l) => a + l.montant, 0);
+  const margePanier = panier.reduce(
+    (a, l) => a + (l.prixUnitaire - l.prixAchatUnitaire) * l.quantite, 0
+  );
+
+  async function validerVente(e) {
+    e.preventDefault();
+    if (panier.length === 0) { alert("Le panier est vide."); return; }
+
     setSaving(true);
     try {
+      // Regroupe les quantites par article pour le decompte du stock
+      const parArticle = {};
+      panier.forEach(l => {
+        parArticle[l.articleId] = (parArticle[l.articleId] || 0) + l.quantite;
+      });
+
+      // Verification finale du stock
+      for (const [id, qte] of Object.entries(parArticle)) {
+        const art = articles.find(a => a.id === id);
+        if (!art || qte > Number(art.stock || 0)) {
+          alert(`Stock insuffisant pour "${art?.nom || "un article"}".`);
+          setSaving(false);
+          return;
+        }
+      }
+
       await addDoc(collection(db, "scolaire_ventes"), {
-        articleId: article.id,
-        articleNom: article.nom,
-        categorie: article.categorie,
-        quantite: qte,
-        prixUnitaire: Number(venteForm.prixUnitaire),
-        prixAchatUnitaire: Number(article.prixAchat || 0),
-        montant: Number(venteForm.montant),
-        client: venteForm.client,
+        client: clientVente.trim(),
+        articles: panier,
+        total: totalPanier,
         createdAt: serverTimestamp(),
       });
-      await updateDoc(doc(db, "scolaire_articles", article.id), {
-        stock: Number(article.stock || 0) - qte,
-      });
+
+      for (const [id, qte] of Object.entries(parArticle)) {
+        const art = articles.find(a => a.id === id);
+        await updateDoc(doc(db, "scolaire_articles", id), {
+          stock: Number(art.stock || 0) - qte,
+        });
+      }
+
       await charger();
       setShowVenteForm(false);
-      setVenteForm(VENTE_VIDE);
-      setRechercheArticleVente("");
-    } catch { alert("Erreur."); }
+      setPanier([]);
+      setClientVente("");
+    } catch (err) {
+      console.error(err);
+      alert("Erreur lors de l'enregistrement.");
+    }
     setSaving(false);
   }
 
-  async function supprimerVente(v) {
+  async function supprimerVente(venteBrute) {
     if (!confirm("Supprimer cette vente ? Le stock sera remis.")) return;
     try {
-      const article = articles.find(a => a.id === v.articleId);
-      if (article) {
-        await updateDoc(doc(db, "scolaire_articles", article.id), {
-          stock: Number(article.stock || 0) + Number(v.quantite || 0),
-        });
+      const v = normaliserVente(venteBrute);
+      for (const l of v.articles) {
+        if (!l.articleId) continue;
+        const art = articles.find(a => a.id === l.articleId);
+        if (art) {
+          await updateDoc(doc(db, "scolaire_articles", l.articleId), {
+            stock: Number(art.stock || 0) + Number(l.quantite || 0),
+          });
+        }
       }
-      await deleteDoc(doc(db, "scolaire_ventes", v.id));
+      await deleteDoc(doc(db, "scolaire_ventes", venteBrute.id));
       await charger();
     } catch { alert("Erreur."); }
   }
@@ -309,31 +558,31 @@ export default function Scolaire() {
   }
 
   // ===== CALCULS =====
-  const totalRecettesGlobal = ventes.reduce((a, v) => a + Number(v.montant || 0), 0);
+  const ventesN = ventes.map(normaliserVente);
+
+  const totalRecettesGlobal = ventesN.reduce((a, v) => a + v.total, 0);
   const totalDepensesGlobal = depenses.reduce((a, d) => a + Number(d.montant || 0), 0);
   const beneficeGlobal = totalRecettesGlobal - totalDepensesGlobal;
-  const valeurStock = articles.reduce((a, art) => a + Number(art.stock || 0) * Number(art.prixVente || 0), 0);
-  const valeurStockAchat = articles.reduce((a, art) => a + Number(art.stock || 0) * Number(art.prixAchat || 0), 0);
+  const valeurStock = articles.reduce((a, x) => a + Number(x.stock || 0) * Number(x.prixVente || 0), 0);
+  const valeurStockAchat = articles.reduce((a, x) => a + Number(x.stock || 0) * Number(x.prixAchat || 0), 0);
 
-  const ventesDuMois = ventes.filter(v => estDansMois(v.createdAt, moisSelectionne, anneeSelectionnee));
+  const ventesDuMois = ventesN.filter(v => estDansMois(v.createdAt, moisSelectionne, anneeSelectionnee));
   const depensesDuMois = depenses.filter(d => estDansMois(d.createdAt, moisSelectionne, anneeSelectionnee));
-  const totalRecettesMois = ventesDuMois.reduce((a, v) => a + Number(v.montant || 0), 0);
+  const totalRecettesMois = ventesDuMois.reduce((a, v) => a + v.total, 0);
   const totalDepensesMois = depensesDuMois.reduce((a, d) => a + Number(d.montant || 0), 0);
   const beneficeMois = totalRecettesMois - totalDepensesMois;
-
-  const margeMois = ventesDuMois.reduce(
-    (a, v) => a + (Number(v.prixUnitaire || 0) - Number(v.prixAchatUnitaire || 0)) * Number(v.quantite || 0),
-    0
-  );
+  const margeMois = ventesDuMois.reduce((a, v) => a + margeVenteTotale(v), 0);
 
   const ruptures = articles.filter(a => Number(a.stock || 0) === 0);
   const stockFaible = articles.filter(a => { const s = Number(a.stock || 0); return s > 0 && s <= 5; });
 
   const ventesParArticle = {};
-  ventes.forEach(v => {
-    if (!ventesParArticle[v.articleNom]) ventesParArticle[v.articleNom] = { nom: v.articleNom, quantite: 0, total: 0 };
-    ventesParArticle[v.articleNom].quantite += Number(v.quantite || 0);
-    ventesParArticle[v.articleNom].total += Number(v.montant || 0);
+  ventesN.forEach(v => {
+    v.articles.forEach(l => {
+      if (!ventesParArticle[l.nom]) ventesParArticle[l.nom] = { nom: l.nom, quantite: 0, total: 0 };
+      ventesParArticle[l.nom].quantite += Number(l.quantite || 0);
+      ventesParArticle[l.nom].total += Number(l.montant || 0);
+    });
   });
   const topArticles = Object.values(ventesParArticle).sort((a, b) => b.total - a.total);
 
@@ -343,7 +592,6 @@ export default function Scolaire() {
     new Date().getFullYear(),
   ].filter(Boolean))].sort((a, b) => b - a);
 
-  // ===== FILTRES =====
   const categoriesPresentes = ["Tous", ...new Set(articles.map(a => a.categorie).filter(Boolean))];
 
   const articlesFiltres = articles
@@ -354,27 +602,25 @@ export default function Scolaire() {
     })
     .sort((a, b) => (a.nom || "").localeCompare(b.nom || ""));
 
-  const valeurStockFiltree = articlesFiltres.reduce((a, art) => a + Number(art.stock || 0) * Number(art.prixVente || 0), 0);
-  const achatStockFiltree = articlesFiltres.reduce((a, art) => a + Number(art.stock || 0) * Number(art.prixAchat || 0), 0);
+  const valeurStockFiltree = articlesFiltres.reduce((a, x) => a + Number(x.stock || 0) * Number(x.prixVente || 0), 0);
+  const achatStockFiltree = articlesFiltres.reduce((a, x) => a + Number(x.stock || 0) * Number(x.prixAchat || 0), 0);
 
-  const ventesFiltrees = [...ventes]
+  const ventesFiltrees = ventesN
     .filter(v => {
       const q = normalise(rechercheVentes);
       if (!q) return true;
-      return normalise(v.articleNom).includes(q) || normalise(v.client).includes(q);
+      return normalise(v.client).includes(q) ||
+        v.articles.some(l => normalise(l.nom).includes(q));
     })
     .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
 
-  const totalVentesFiltrees = ventesFiltrees.reduce((a, v) => a + Number(v.montant || 0), 0);
+  const totalVentesFiltrees = ventesFiltrees.reduce((a, v) => a + v.total, 0);
 
   const articlesPourVente = articles.filter(a =>
-    normalise(a.nom).includes(normalise(rechercheArticleVente))
+    normalise(a.nom).includes(normalise(rechercheArticle))
   );
 
-  const articleChoisi = articles.find(a => a.id === venteForm.articleId);
-  const margeVente = articleChoisi
-    ? (Number(venteForm.prixUnitaire || 0) - Number(articleChoisi.prixAchat || 0)) * Number(venteForm.quantite || 0)
-    : 0;
+  const articleLigne = articles.find(a => a.id === ligne.articleId);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -393,7 +639,7 @@ export default function Scolaire() {
                 className="bg-red-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition">
                 + Depense
               </button>
-              <button onClick={() => setShowVenteForm(true)}
+              <button onClick={ouvrirVente}
                 className="bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition">
                 + Vente
               </button>
@@ -406,7 +652,6 @@ export default function Scolaire() {
 
           {loading ? <div className="text-gray-400">Chargement...</div> : (
             <>
-              {/* Cartes globales — 5 cartes avec le total d'achat */}
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
                 <div className="bg-green-50 border border-green-200 rounded-2xl p-4">
                   <p className="text-green-600 text-xs font-bold uppercase mb-1">Total recettes</p>
@@ -518,15 +763,18 @@ export default function Scolaire() {
                     ) : (
                       <div className="divide-y divide-gray-50">
                         {[...ventesDuMois].sort((a,b) => (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0)).map(v => (
-                          <div key={v.id} className="flex items-center justify-between px-4 py-3">
-                            <div>
-                              <p className="font-medium text-sm">{v.articleNom} x{v.quantite}</p>
-                              <p className="text-gray-400 text-xs">
-                                {formatDate(v.createdAt)} — {formatPrix(v.prixUnitaire)} / unite
-                                {v.client && ` — ${v.client}`}
+                          <div key={v.id} className="flex items-center justify-between px-4 py-3 gap-3">
+                            <div className="min-w-0">
+                              <p className="font-medium text-sm truncate">
+                                {v.client || "Client comptoir"}
+                              </p>
+                              <p className="text-gray-400 text-xs truncate">
+                                {formatDate(v.createdAt)} — {v.articles.map(l => `${l.nom} x${l.quantite}`).join(", ")}
                               </p>
                             </div>
-                            <p className="font-black text-sm text-green-600">+{formatPrix(v.montant)}</p>
+                            <p className="font-black text-sm text-green-600 flex-shrink-0">
+                              +{formatPrix(v.total)}
+                            </p>
                           </div>
                         ))}
                       </div>
@@ -597,14 +845,10 @@ export default function Scolaire() {
               {/* ===== STOCK ===== */}
               {onglet === "stock" && (
                 <>
-                  {/* Barre de recherche + filtres */}
                   <div className="bg-white rounded-xl border border-gray-200 p-4 mb-5">
-                    <input
-                      value={rechercheStock}
-                      onChange={e => setRechercheStock(e.target.value)}
+                    <input value={rechercheStock} onChange={e => setRechercheStock(e.target.value)}
                       placeholder="Rechercher un article..."
-                      className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400 mb-3"
-                    />
+                      className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400 mb-3" />
                     <div className="flex gap-2 overflow-x-auto pb-1">
                       {categoriesPresentes.map(c => (
                         <button key={c} onClick={() => setFiltreCategorie(c)}
@@ -615,14 +859,10 @@ export default function Scolaire() {
                     </div>
                   </div>
 
-                  {/* Totaux du filtre */}
                   <div className="grid grid-cols-2 gap-4 mb-5">
                     <div className="bg-white rounded-xl border border-gray-200 p-4">
                       <p className="text-gray-400 text-xs font-bold uppercase mb-1">Achat total</p>
                       <p className="font-black text-xl text-gray-800">{formatPrix(achatStockFiltree)}</p>
-                      <p className="text-gray-400 text-xs mt-1">
-                        {(rechercheStock || filtreCategorie !== "Tous") ? "Sur la selection" : "Sur tout le stock"}
-                      </p>
                     </div>
                     <div className="bg-white rounded-xl border border-gray-200 p-4">
                       <p className="text-gray-400 text-xs font-bold uppercase mb-1">Revente estimee</p>
@@ -650,9 +890,6 @@ export default function Scolaire() {
                         <p className="font-semibold">
                           {articles.length === 0 ? "Aucun article enregistre" : "Aucun resultat"}
                         </p>
-                        <p className="text-sm mt-1">
-                          {articles.length === 0 ? "Ajoute tes cahiers, bics, sacs..." : "Essaie un autre mot ou une autre categorie"}
-                        </p>
                       </div>
                     ) : (
                       <div className="divide-y divide-gray-50">
@@ -660,9 +897,6 @@ export default function Scolaire() {
                           const stock = Number(a.stock || 0);
                           const pa = Number(a.prixAchat || 0);
                           const pv = Number(a.prixVente || 0);
-                          const marge = pv - pa;
-                          const achatTotal = stock * pa;
-                          const reventeTotal = stock * pv;
                           return (
                             <div key={a.id} className="px-4 py-3">
                               <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -670,18 +904,11 @@ export default function Scolaire() {
                                   <p className="font-bold text-sm">{a.nom}</p>
                                   <p className="text-gray-400 text-xs">{a.categorie}</p>
                                   <div className="flex gap-3 mt-1 flex-wrap">
-                                    <span className="text-xs text-gray-500">
-                                      Achat : <b>{formatPrix(pa)}</b>
-                                    </span>
-                                    <span className="text-xs text-gray-500">
-                                      Vente : <b className="text-green-600">{formatPrix(pv)}</b>
-                                    </span>
-                                    <span className={`text-xs ${marge > 0 ? "text-indigo-600" : "text-gray-400"}`}>
-                                      Marge : <b>{formatPrix(marge)}</b>
-                                    </span>
+                                    <span className="text-xs text-gray-500">Achat : <b>{formatPrix(pa)}</b></span>
+                                    <span className="text-xs text-gray-500">Vente : <b className="text-green-600">{formatPrix(pv)}</b></span>
+                                    <span className="text-xs text-indigo-600">Marge : <b>{formatPrix(pv - pa)}</b></span>
                                   </div>
                                 </div>
-
                                 <div className="text-right">
                                   {stock === 0 ? (
                                     <span className="text-red-500 text-xs font-bold">Rupture</span>
@@ -694,21 +921,20 @@ export default function Scolaire() {
                                 </div>
                               </div>
 
-                              {/* Totaux de la ligne */}
                               {stock > 0 && (
                                 <div className="flex gap-4 mt-2 pt-2 border-t border-gray-50 flex-wrap">
                                   <div>
                                     <span className="text-xs text-gray-400">Achat total : </span>
-                                    <span className="text-xs font-black text-gray-700">{formatPrix(achatTotal)}</span>
+                                    <span className="text-xs font-black text-gray-700">{formatPrix(stock * pa)}</span>
                                   </div>
                                   <div>
                                     <span className="text-xs text-gray-400">Revente : </span>
-                                    <span className="text-xs font-black text-purple-600">{formatPrix(reventeTotal)}</span>
+                                    <span className="text-xs font-black text-purple-600">{formatPrix(stock * pv)}</span>
                                   </div>
                                   <div>
-                                    <span className="text-xs text-gray-400">Gain potentiel : </span>
-                                    <span className={`text-xs font-black ${reventeTotal - achatTotal >= 0 ? "text-indigo-600" : "text-red-500"}`}>
-                                      {formatPrix(reventeTotal - achatTotal)}
+                                    <span className="text-xs text-gray-400">Gain : </span>
+                                    <span className="text-xs font-black text-indigo-600">
+                                      {formatPrix(stock * (pv - pa))}
                                     </span>
                                   </div>
                                 </div>
@@ -744,12 +970,6 @@ export default function Scolaire() {
                           <span className="font-bold text-sm text-purple-700">Valeur de revente</span>
                           <span className="font-black text-purple-700">{formatPrix(valeurStockFiltree)}</span>
                         </div>
-                        <div className="flex justify-between pt-1 border-t border-gray-200">
-                          <span className="font-bold text-sm text-indigo-700">Gain potentiel</span>
-                          <span className="font-black text-indigo-700">
-                            {formatPrix(valeurStockFiltree - achatStockFiltree)}
-                          </span>
-                        </div>
                       </div>
                     )}
                   </div>
@@ -781,14 +1001,10 @@ export default function Scolaire() {
                     </div>
                   )}
 
-                  {/* Recherche dans l'historique */}
                   <div className="bg-white rounded-xl border border-gray-200 p-4 mb-5">
-                    <input
-                      value={rechercheVentes}
-                      onChange={e => setRechercheVentes(e.target.value)}
-                      placeholder="Rechercher par article ou par client..."
-                      className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400"
-                    />
+                    <input value={rechercheVentes} onChange={e => setRechercheVentes(e.target.value)}
+                      placeholder="Rechercher par client ou par article..."
+                      className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400" />
                     {rechercheVentes && (
                       <p className="text-xs text-gray-500 mt-2">
                         {ventesFiltrees.length} resultat(s) — total {formatPrix(totalVentesFiltrees)}
@@ -802,35 +1018,61 @@ export default function Scolaire() {
                         Historique des ventes
                         <span className="text-gray-400 font-normal ml-2 text-sm">({ventesFiltrees.length})</span>
                       </h3>
-                      <button onClick={() => setShowVenteForm(true)}
+                      <button onClick={ouvrirVente}
                         className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">
                         + Vente
                       </button>
                     </div>
+
                     {ventesFiltrees.length === 0 ? (
                       <div className="text-center py-12 text-gray-400">
-                        {ventes.length === 0 ? "Aucune vente enregistree" : "Aucun resultat pour cette recherche"}
+                        {ventes.length === 0 ? "Aucune vente enregistree" : "Aucun resultat"}
                       </div>
                     ) : (
                       <div className="divide-y divide-gray-50">
                         {ventesFiltrees.map(v => (
-                          <div key={v.id} className="flex items-center justify-between px-4 py-3">
-                            <div>
-                              <p className="font-medium text-sm">{v.articleNom} x{v.quantite}</p>
-                              <p className="text-gray-400 text-xs">
-                                {formatDate(v.createdAt)} — {formatPrix(v.prixUnitaire)} / unite
-                                {v.client && ` — ${v.client}`}
+                          <div key={v.id} className="px-4 py-3">
+                            <div className="flex items-start justify-between gap-3 mb-2">
+                              <div className="min-w-0">
+                                <p className="font-bold text-sm">
+                                  {v.client || "Client comptoir"}
+                                </p>
+                                <p className="text-gray-400 text-xs">
+                                  {formatDate(v.createdAt)} — {numeroFacture(v)}
+                                </p>
+                              </div>
+                              <p className="font-black text-sm text-green-600 flex-shrink-0">
+                                +{formatPrix(v.total)}
                               </p>
                             </div>
-                            <div className="flex items-center gap-3">
-                              <p className="font-black text-sm text-green-600">+{formatPrix(v.montant)}</p>
+
+                            <div className="bg-gray-50 rounded-lg px-3 py-2 mb-2">
+                              {v.articles.map((l, i) => (
+                                <div key={i} className="flex justify-between text-xs py-0.5">
+                                  <span className="text-gray-600">
+                                    {l.nom} x{l.quantite}
+                                    <span className="text-gray-400"> a {formatPrix(l.prixUnitaire)}</span>
+                                  </span>
+                                  <span className="font-medium text-gray-700">{formatPrix(l.montant)}</span>
+                                </div>
+                              ))}
+                            </div>
+
+                            <div className="flex gap-2">
+                              <button onClick={() => genererFacture(v)}
+                                className="bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-100 transition">
+                                Telecharger la facture
+                              </button>
                               <button onClick={() => supprimerVente(v)}
-                                className="text-gray-300 hover:text-red-500 transition text-lg">x</button>
+                                className="bg-red-50 text-red-600 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-red-100 transition">
+                                Supprimer
+                              </button>
                             </div>
                           </div>
                         ))}
                       </div>
                     )}
+
                     <div className="p-4 border-t border-gray-100 flex justify-between bg-green-50">
                       <span className="font-bold text-sm text-green-700">
                         {rechercheVentes ? "Total de la recherche" : "Total general"}
@@ -883,6 +1125,184 @@ export default function Scolaire() {
         </main>
       </div>
 
+      {/* ===== MODAL VENTE (PANIER) ===== */}
+      {showVenteForm && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center justify-center">
+          <div className="bg-white rounded-t-2xl md:rounded-2xl p-6 w-full md:max-w-2xl max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="font-black text-lg">Nouvelle vente</h3>
+              <button onClick={() => setShowVenteForm(false)} className="text-gray-400 text-xl">X</button>
+            </div>
+
+            {articles.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-gray-500 mb-4">Ajoute d'abord des articles a ton stock.</p>
+                <button onClick={() => { setShowVenteForm(false); ouvrirNouvelArticle(); }}
+                  className="bg-gray-900 text-white px-5 py-2.5 rounded-lg font-medium">
+                  + Creer un article
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={validerVente} className="space-y-5">
+
+                {/* Client */}
+                <div>
+                  <label className="text-sm text-gray-500 block mb-1">
+                    Nom du client <span className="text-gray-400 font-normal">(pour la facture)</span>
+                  </label>
+                  <input value={clientVente} onChange={e => setClientVente(e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400"
+                    placeholder="Ex: Fatou Sow" />
+                </div>
+
+                {/* Ajout d'une ligne */}
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+                  <p className="font-bold text-sm">Ajouter un article</p>
+
+                  {!articleLigne ? (
+                    <div>
+                      <input value={rechercheArticle}
+                        onChange={e => setRechercheArticle(e.target.value)}
+                        placeholder="Tape les premieres lettres..."
+                        className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400 bg-white" />
+                      <div className="mt-2 bg-white border border-gray-100 rounded-xl max-h-52 overflow-y-auto divide-y divide-gray-50">
+                        {articlesPourVente.length === 0 ? (
+                          <p className="text-center py-5 text-gray-400 text-sm">Aucun article trouve</p>
+                        ) : (
+                          articlesPourVente.map(a => {
+                            const dejaPris = panier
+                              .filter(l => l.articleId === a.id)
+                              .reduce((s, l) => s + l.quantite, 0);
+                            const dispo = Number(a.stock || 0) - dejaPris;
+                            return (
+                              <button key={a.id} type="button" disabled={dispo <= 0}
+                                onClick={() => choisirArticle(a)}
+                                className={`w-full text-left px-3 py-2.5 transition ${dispo <= 0 ? "opacity-40 cursor-not-allowed" : "hover:bg-gray-50"}`}>
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="font-medium text-sm truncate">{a.nom}</p>
+                                    <p className="text-gray-400 text-xs">
+                                      {a.categorie} — {formatPrix(a.prixVente || 0)}
+                                    </p>
+                                  </div>
+                                  <span className={`text-xs font-bold flex-shrink-0 ${dispo <= 0 ? "text-red-500" : dispo <= 5 ? "text-orange-500" : "text-gray-500"}`}>
+                                    {dispo <= 0 ? "Epuise" : `${dispo} dispo`}
+                                  </span>
+                                </div>
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-bold text-sm text-blue-900">{articleLigne.nom}</p>
+                          <p className="text-blue-600 text-xs">
+                            Stock : {articleLigne.stock} — achat {formatPrix(articleLigne.prixAchat || 0)}
+                          </p>
+                        </div>
+                        <button type="button" onClick={() => setLigne(LIGNE_VIDE)}
+                          className="text-blue-500 hover:text-blue-700 text-xs font-bold flex-shrink-0">
+                          Changer
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs text-gray-500 block mb-1">Quantite</label>
+                          <input type="number" min="1" value={ligne.quantite}
+                            onChange={e => setLigne(l => ({ ...l, quantite: e.target.value }))}
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-400 bg-white" />
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-500 block mb-1">
+                            Prix de vente <span className="text-orange-500 font-bold">*</span>
+                          </label>
+                          <input type="number" min="1" value={ligne.prixUnitaire}
+                            onChange={e => setLigne(l => ({ ...l, prixUnitaire: e.target.value }))}
+                            className="w-full border-2 border-orange-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500 bg-white font-bold" />
+                        </div>
+                      </div>
+
+                      {ligne.quantite && ligne.prixUnitaire && (
+                        <p className="text-sm font-bold text-gray-700">
+                          Sous-total : {formatPrix(Number(ligne.quantite) * Number(ligne.prixUnitaire))}
+                        </p>
+                      )}
+
+                      <button type="button" onClick={ajouterAuPanier}
+                        className="w-full bg-gray-900 text-white py-2.5 rounded-lg font-bold text-sm hover:bg-gray-700 transition">
+                        Ajouter au panier
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Panier */}
+                <div>
+                  <p className="font-bold text-sm mb-2">
+                    Panier
+                    <span className="text-gray-400 font-normal ml-2">({panier.length} ligne(s))</span>
+                  </p>
+
+                  {panier.length === 0 ? (
+                    <p className="text-sm text-gray-400 text-center py-6 bg-gray-50 rounded-xl">
+                      Aucun article dans le panier
+                    </p>
+                  ) : (
+                    <div className="border border-gray-200 rounded-xl overflow-hidden">
+                      {panier.map((l, i) => (
+                        <div key={i}
+                          className="flex items-center justify-between gap-3 px-3 py-2.5 border-b border-gray-50 last:border-0">
+                          <div className="min-w-0">
+                            <p className="font-medium text-sm truncate">{l.nom}</p>
+                            <p className="text-gray-400 text-xs">
+                              {l.quantite} x {formatPrix(l.prixUnitaire)}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-3 flex-shrink-0">
+                            <span className="font-black text-sm">{formatPrix(l.montant)}</span>
+                            <button type="button" onClick={() => retirerDuPanier(i)}
+                              className="text-gray-300 hover:text-red-500 text-lg transition">x</button>
+                          </div>
+                        </div>
+                      ))}
+
+                      <div className="bg-gray-900 text-white px-4 py-3 flex justify-between items-center">
+                        <span className="font-bold text-sm">TOTAL</span>
+                        <span className="font-black text-lg">{formatPrix(totalPanier)}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {panier.length > 0 && (
+                    <div className={`mt-2 border rounded-xl p-3 ${margePanier >= 0 ? "bg-indigo-50 border-indigo-200" : "bg-red-50 border-red-200"}`}>
+                      <p className={`text-sm font-bold ${margePanier >= 0 ? "text-indigo-700" : "text-red-700"}`}>
+                        Marge sur cette vente : {margePanier >= 0 ? "+" : ""}{formatPrix(margePanier)}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-3">
+                  <button type="button" onClick={() => setShowVenteForm(false)}
+                    className="flex-1 border border-gray-200 text-gray-600 py-3 rounded-lg font-medium">
+                    Annuler
+                  </button>
+                  <button type="submit" disabled={saving || panier.length === 0}
+                    className="flex-1 bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700 disabled:opacity-40">
+                    {saving ? "Enregistrement..." : `Valider — ${formatPrix(totalPanier)}`}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ===== MODAL ARTICLE ===== */}
       {showArticleForm && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center justify-center">
@@ -926,7 +1346,6 @@ export default function Scolaire() {
                     placeholder="500" />
                 </div>
               </div>
-
               <div>
                 <label className="text-sm text-gray-500 block mb-1">Quantite en stock</label>
                 <input type="number" value={articleForm.stock}
@@ -941,14 +1360,9 @@ export default function Scolaire() {
                     Achat total : {formatPrix(Number(articleForm.prixAchat) * Number(articleForm.stock))}
                   </p>
                   {articleForm.prixVente && (
-                    <>
-                      <p className="text-purple-700 text-sm font-bold">
-                        Revente estimee : {formatPrix(Number(articleForm.prixVente) * Number(articleForm.stock))}
-                      </p>
-                      <p className="text-indigo-700 text-sm font-bold">
-                        Gain potentiel : {formatPrix((Number(articleForm.prixVente) - Number(articleForm.prixAchat)) * Number(articleForm.stock))}
-                      </p>
-                    </>
+                    <p className="text-indigo-700 text-sm font-bold">
+                      Gain potentiel : {formatPrix((Number(articleForm.prixVente) - Number(articleForm.prixAchat)) * Number(articleForm.stock))}
+                    </p>
                   )}
                 </div>
               )}
@@ -966,151 +1380,7 @@ export default function Scolaire() {
         </div>
       )}
 
-      {/* ===== MODAL VENTE ===== */}
-      {showVenteForm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center justify-center">
-          <div className="bg-white rounded-t-2xl md:rounded-2xl p-6 w-full md:max-w-md max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="font-black text-lg">Nouvelle vente</h3>
-              <button onClick={() => { setShowVenteForm(false); setRechercheArticleVente(""); }}
-                className="text-gray-400 text-xl">X</button>
-            </div>
-
-            {articles.length === 0 ? (
-              <div className="text-center py-8">
-                <p className="text-gray-500 mb-4">Ajoute d'abord des articles a ton stock.</p>
-                <button onClick={() => { setShowVenteForm(false); ouvrirNouvelArticle(); }}
-                  className="bg-gray-900 text-white px-5 py-2.5 rounded-lg font-medium">
-                  + Creer un article
-                </button>
-              </div>
-            ) : (
-              <form onSubmit={ajouterVente} className="space-y-4">
-
-                {/* Selection article avec recherche */}
-                {!articleChoisi ? (
-                  <div>
-                    <label className="text-sm text-gray-500 block mb-1">Rechercher l'article</label>
-                    <input
-                      value={rechercheArticleVente}
-                      onChange={e => setRechercheArticleVente(e.target.value)}
-                      placeholder="Tape les premieres lettres..."
-                      autoFocus
-                      className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400"
-                    />
-                    <div className="mt-2 border border-gray-100 rounded-xl max-h-60 overflow-y-auto divide-y divide-gray-50">
-                      {articlesPourVente.length === 0 ? (
-                        <p className="text-center py-6 text-gray-400 text-sm">Aucun article trouve</p>
-                      ) : (
-                        articlesPourVente.map(a => {
-                          const stock = Number(a.stock || 0);
-                          return (
-                            <button
-                              key={a.id}
-                              type="button"
-                              disabled={stock === 0}
-                              onClick={() => choisirArticleVente(a)}
-                              className={`w-full text-left px-3 py-2.5 transition ${stock === 0 ? "opacity-40 cursor-not-allowed" : "hover:bg-gray-50"}`}
-                            >
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="min-w-0">
-                                  <p className="font-medium text-sm truncate">{a.nom}</p>
-                                  <p className="text-gray-400 text-xs">
-                                    {a.categorie} — {formatPrix(a.prixVente || 0)}
-                                  </p>
-                                </div>
-                                <span className={`text-xs font-bold flex-shrink-0 ${stock === 0 ? "text-red-500" : stock <= 5 ? "text-orange-500" : "text-gray-500"}`}>
-                                  {stock === 0 ? "Rupture" : `${stock} en stock`}
-                                </span>
-                              </div>
-                            </button>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="font-bold text-sm text-blue-900">{articleChoisi.nom}</p>
-                      <p className="text-blue-600 text-xs mt-0.5">
-                        Stock : {articleChoisi.stock} — achat {formatPrix(articleChoisi.prixAchat || 0)}
-                      </p>
-                    </div>
-                    <button type="button"
-                      onClick={() => { setVenteForm(VENTE_VIDE); setRechercheArticleVente(""); }}
-                      className="text-blue-500 hover:text-blue-700 text-xs font-bold flex-shrink-0">
-                      Changer
-                    </button>
-                  </div>
-                )}
-
-                {articleChoisi && (
-                  <>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-sm text-gray-500 block mb-1">Quantite</label>
-                        <input type="number" name="quantite" value={venteForm.quantite}
-                          onChange={handleVenteChange} required min="1"
-                          max={articleChoisi.stock}
-                          className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400"
-                          placeholder="1" />
-                      </div>
-                      <div>
-                        <label className="text-sm text-gray-500 block mb-1">
-                          Prix de vente <span className="text-orange-500 font-bold">*</span>
-                        </label>
-                        <input type="number" name="prixUnitaire" value={venteForm.prixUnitaire}
-                          onChange={handleVenteChange} required min="1"
-                          className="w-full border-2 border-orange-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-orange-500 font-bold"
-                          placeholder="500" />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="text-sm text-gray-500 block mb-1">Nom du client — optionnel</label>
-                      <input name="client" value={venteForm.client} onChange={handleVenteChange}
-                        className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400"
-                        placeholder="Ex: Fatou Sow" />
-                    </div>
-
-                    <div className="bg-green-50 border border-green-200 rounded-xl p-3">
-                      <label className="text-sm text-green-700 font-bold block mb-1">Montant total (FCFA)</label>
-                      <input type="number" name="montant" value={venteForm.montant}
-                        onChange={handleVenteChange} required min="1"
-                        className="w-full border border-green-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-green-400 bg-white font-bold text-green-700" />
-                    </div>
-
-                    {venteForm.prixUnitaire && venteForm.quantite && (
-                      <div className={`border rounded-xl p-3 ${margeVente >= 0 ? "bg-indigo-50 border-indigo-200" : "bg-red-50 border-red-200"}`}>
-                        <p className={`text-sm font-bold ${margeVente >= 0 ? "text-indigo-700" : "text-red-700"}`}>
-                          Marge sur cette vente : {margeVente >= 0 ? "+" : ""}{formatPrix(margeVente)}
-                        </p>
-                        {margeVente < 0 && (
-                          <p className="text-xs text-red-500 mt-0.5">
-                            Attention : tu vends en dessous du prix d'achat
-                          </p>
-                        )}
-                      </div>
-                    )}
-                  </>
-                )}
-
-                <div className="flex gap-3 pt-2">
-                  <button type="button" onClick={() => { setShowVenteForm(false); setRechercheArticleVente(""); }}
-                    className="flex-1 border border-gray-200 text-gray-600 py-3 rounded-lg font-medium">Annuler</button>
-                  <button type="submit" disabled={saving || !articleChoisi}
-                    className="flex-1 bg-green-600 text-white py-3 rounded-lg font-medium hover:bg-green-700 disabled:opacity-50">
-                    {saving ? "Enregistrement..." : "Valider la vente"}
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ===== MODAL REAPPROVISIONNEMENT ===== */}
+      {/* ===== MODAL REAPPRO ===== */}
       {showReappro && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center justify-center">
           <div className="bg-white rounded-t-2xl md:rounded-2xl p-6 w-full md:max-w-sm">
@@ -1126,9 +1396,9 @@ export default function Scolaire() {
               <div>
                 <label className="text-sm text-gray-500 block mb-1">Quantite a ajouter</label>
                 <input type="number" value={reapproQte} onChange={e => setReapproQte(e.target.value)}
-                  required min="1"
+                  required min="1" autoFocus
                   className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400"
-                  placeholder="20" autoFocus />
+                  placeholder="20" />
               </div>
               {reapproQte && (
                 <div className="bg-green-50 border border-green-200 rounded-xl p-3 space-y-1">
@@ -1136,7 +1406,7 @@ export default function Scolaire() {
                     Nouveau stock : {Number(articles.find(a => a.id === showReappro)?.stock || 0) + Number(reapproQte)}
                   </p>
                   <p className="text-xs text-green-600">
-                    Cout de ce reappro : {formatPrix(Number(articles.find(a => a.id === showReappro)?.prixAchat || 0) * Number(reapproQte))}
+                    Cout : {formatPrix(Number(articles.find(a => a.id === showReappro)?.prixAchat || 0) * Number(reapproQte))}
                   </p>
                 </div>
               )}
