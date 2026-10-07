@@ -6,6 +6,9 @@ import { formatPrix } from "../../utils/format";
 
 const STATUTS = ["En attente", "Confirme", "En livraison", "Livre", "Annule"];
 
+// Seuls ces statuts acceptent l'enregistrement de versements
+const STATUTS_VERSEMENT = ["Confirme"];
+
 const STATUS_COLORS = {
   "En attente": "bg-yellow-100 text-yellow-700",
   "Confirme": "bg-blue-100 text-blue-700",
@@ -82,10 +85,21 @@ function formatDate(ts) {
   return d.toLocaleDateString("fr-SN", { day: "2-digit", month: "short", year: "numeric" });
 }
 
-// Calcule l'etat de paiement d'une commande
+// Etat de paiement d'une commande
 function etatPaiement(cmd) {
   const total = Number(cmd.total || 0);
-  const paye = (cmd.versements || []).reduce((a, v) => a + Number(v.montant || 0), 0);
+  const versements = cmd.versements || [];
+  const paye = versements.reduce((a, v) => a + Number(v.montant || 0), 0);
+
+  // Commande livree sans versement enregistre : reglee a la livraison
+  if (versements.length === 0 && cmd.statut === "Livre") {
+    return {
+      total, paye: total, reste: 0, pct: 100,
+      label: "Paye", couleur: "bg-green-100 text-green-700",
+      regleALivraison: true,
+    };
+  }
+
   const reste = Math.max(0, total - paye);
   const pct = total > 0 ? Math.min(100, Math.round(paye / total * 100)) : 0;
 
@@ -101,7 +115,13 @@ function etatPaiement(cmd) {
     couleur = "bg-orange-100 text-orange-700";
   }
 
-  return { total, paye, reste, pct, label, couleur };
+  return { total, paye, reste, pct, label, couleur, regleALivraison: false };
+}
+
+// La commande peut-elle recevoir un versement ?
+function peutRecevoirVersement(cmd) {
+  if (!STATUTS_VERSEMENT.includes(cmd.statut)) return false;
+  return etatPaiement(cmd).reste > 0;
 }
 
 const MOYENS = ["Especes", "Wave", "Orange Money", "Free Money", "Virement", "Autre"];
@@ -131,6 +151,21 @@ export default function AdminOrders() {
 
   async function changerStatut(id, nouveauStatut, commande) {
     const ancienStatut = commande.statut;
+    const p = etatPaiement(commande);
+
+    // Alerte si on livre une commande pas entierement payee
+    if (nouveauStatut === "Livre" && p.reste > 0 && (commande.versements || []).length > 0) {
+      const ok = confirm(
+        `Cette commande n'est pas entierement payee.\n\n` +
+        `Total : ${formatPrix(p.total)}\n` +
+        `Paye : ${formatPrix(p.paye)}\n` +
+        `Reste : ${formatPrix(p.reste)}\n\n` +
+        `Une fois livree, tu ne pourras plus enregistrer de versement dessus.\n\n` +
+        `Marquer quand meme comme livree ?`
+      );
+      if (!ok) return;
+    }
+
     await updateDoc(doc(db, "commandes", id), { statut: nouveauStatut });
 
     if (nouveauStatut === "Livre" && ancienStatut !== "Livre") {
@@ -172,6 +207,12 @@ export default function AdminOrders() {
     e.preventDefault();
     const cmd = commandes.find(c => c.id === showVersement);
     if (!cmd) return;
+
+    if (!STATUTS_VERSEMENT.includes(cmd.statut)) {
+      alert("Les versements ne sont possibles que sur les commandes confirmees.");
+      setShowVersement(null);
+      return;
+    }
 
     const montant = Number(versementForm.montant);
     const { reste } = etatPaiement(cmd);
@@ -221,7 +262,6 @@ export default function AdminOrders() {
   // ===== FILTRES =====
   const filtrees = commandes.filter(c => {
     const matchStatut = filtre === "Tous" || c.statut === filtre;
-
     const { label } = etatPaiement(c);
     const matchPaiement = filtrePaiement === "Tous" || label === filtrePaiement;
 
@@ -234,12 +274,12 @@ export default function AdminOrders() {
     return matchStatut && matchPaiement && matchRecherche;
   });
 
-  // Totaux des creances
-  const commandesActives = commandes.filter(c => c.statut !== "Annule");
-  const totalDu = commandesActives.reduce((a, c) => a + Number(c.total || 0), 0);
-  const totalEncaisse = commandesActives.reduce((a, c) => a + etatPaiement(c).paye, 0);
-  const totalRestant = totalDu - totalEncaisse;
-  const nbImpayees = commandesActives.filter(c => etatPaiement(c).reste > 0).length;
+  // Totaux
+  const actives = commandes.filter(c => c.statut !== "Annule");
+  const totalDu = actives.reduce((a, c) => a + Number(c.total || 0), 0);
+  const totalEncaisse = actives.reduce((a, c) => a + etatPaiement(c).paye, 0);
+  const totalRestant = actives.reduce((a, c) => a + etatPaiement(c).reste, 0);
+  const nbImpayees = actives.filter(c => etatPaiement(c).reste > 0).length;
 
   const cmdVersement = commandes.find(c => c.id === showVersement);
   const etatCmdVersement = cmdVersement ? etatPaiement(cmdVersement) : null;
@@ -258,7 +298,7 @@ export default function AdminOrders() {
             </div>
           </div>
 
-          {/* Cartes creances */}
+          {/* Cartes */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
             <div className="bg-white rounded-xl border border-gray-200 p-4">
               <p className="text-gray-400 text-xs font-bold uppercase mb-1">Total commandes</p>
@@ -321,11 +361,13 @@ export default function AdminOrders() {
               {filtrees.map(cmd => {
                 const p = etatPaiement(cmd);
                 const ouvert = selected?.id === cmd.id;
+                const versementPossible = peutRecevoirVersement(cmd);
+                const aDesVersements = (cmd.versements || []).length > 0;
+
                 return (
                   <div key={cmd.id}
                     className={`bg-white rounded-xl border p-4 transition ${ouvert ? "border-blue-300 shadow-sm" : "border-gray-200 hover:shadow-sm"}`}>
 
-                    {/* En-tete cliquable */}
                     <div className="cursor-pointer" onClick={() => setSelected(ouvert ? null : cmd)}>
                       <div className="flex items-start justify-between gap-3 mb-3">
                         <div>
@@ -339,7 +381,7 @@ export default function AdminOrders() {
                         </div>
                       </div>
 
-                      {/* Barre de paiement */}
+                      {/* Etat de paiement */}
                       {cmd.statut !== "Annule" && (
                         <div className="mb-3">
                           <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
@@ -347,20 +389,28 @@ export default function AdminOrders() {
                               {p.label}
                             </span>
                             <span className="text-xs text-gray-500">
-                              {formatPrix(p.paye)} paye
-                              {p.reste > 0 && (
-                                <span className="text-orange-600 font-bold">
-                                  {" "}— reste {formatPrix(p.reste)}
-                                </span>
+                              {p.regleALivraison ? (
+                                <span className="text-green-600">Regle a la livraison</span>
+                              ) : (
+                                <>
+                                  {formatPrix(p.paye)} paye
+                                  {p.reste > 0 && (
+                                    <span className="text-orange-600 font-bold">
+                                      {" "}— reste {formatPrix(p.reste)}
+                                    </span>
+                                  )}
+                                </>
                               )}
                             </span>
                           </div>
-                          <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
-                            <div
-                              className={`h-2 rounded-full transition-all duration-500 ${p.reste <= 0 ? "bg-green-500" : "bg-orange-500"}`}
-                              style={{ width: `${p.pct}%` }}
-                            />
-                          </div>
+                          {!p.regleALivraison && (
+                            <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                              <div
+                                className={`h-2 rounded-full transition-all duration-500 ${p.reste <= 0 ? "bg-green-500" : "bg-orange-500"}`}
+                                style={{ width: `${p.pct}%` }}
+                              />
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -377,12 +427,19 @@ export default function AdminOrders() {
                       </div>
                     </div>
 
-                    {/* Bouton versement */}
-                    {cmd.statut !== "Annule" && p.reste > 0 && (
+                    {/* Bouton versement — uniquement sur les commandes confirmees */}
+                    {versementPossible && (
                       <button onClick={() => ouvrirVersement(cmd)}
                         className="w-full mt-3 bg-green-600 text-white py-2.5 rounded-lg text-sm font-bold hover:bg-green-700 transition">
                         + Enregistrer un versement
                       </button>
+                    )}
+
+                    {/* Rappel si en attente */}
+                    {cmd.statut === "En attente" && (
+                      <p className="mt-3 text-xs text-gray-400 bg-gray-50 rounded-lg px-3 py-2 text-center">
+                        Confirme la commande pour pouvoir enregistrer des versements
+                      </p>
                     )}
 
                     {/* Detail */}
@@ -419,70 +476,90 @@ export default function AdminOrders() {
                           </div>
                         </div>
 
-                        {/* Historique des versements */}
-                        <div>
-                          <div className="flex items-center justify-between mb-2">
-                            <p className="text-xs text-gray-400 uppercase tracking-wide">
-                              Versements ({(cmd.versements || []).length})
-                            </p>
-                            {p.reste > 0 && cmd.statut !== "Annule" && (
-                              <button onClick={() => ouvrirVersement(cmd)}
-                                className="bg-green-50 text-green-700 px-3 py-1 rounded-lg text-xs font-bold hover:bg-green-100">
-                                + Versement
-                              </button>
-                            )}
-                          </div>
+                        {/* Versements */}
+                        {cmd.statut !== "Annule" && (
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <p className="text-xs text-gray-400 uppercase tracking-wide">
+                                Versements ({(cmd.versements || []).length})
+                              </p>
+                              {versementPossible && (
+                                <button onClick={() => ouvrirVersement(cmd)}
+                                  className="bg-green-50 text-green-700 px-3 py-1 rounded-lg text-xs font-bold hover:bg-green-100">
+                                  + Versement
+                                </button>
+                              )}
+                            </div>
 
-                          {(cmd.versements || []).length === 0 ? (
-                            <p className="text-sm text-gray-400 py-3 text-center bg-gray-50 rounded-lg">
-                              Aucun versement enregistre
-                            </p>
-                          ) : (
-                            <div className="space-y-1">
-                              {cmd.versements.map((v, i) => (
-                                <div key={i}
-                                  className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                            {!aDesVersements ? (
+                              <p className="text-sm text-gray-400 py-3 text-center bg-gray-50 rounded-lg">
+                                {p.regleALivraison
+                                  ? "Commande reglee a la livraison"
+                                  : "Aucun versement enregistre"}
+                              </p>
+                            ) : (
+                              <div className="space-y-1">
+                                {cmd.versements.map((v, i) => (
+                                  <div key={i}
+                                    className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                                    <div>
+                                      <p className="text-sm font-medium">
+                                        {formatPrix(v.montant)}
+                                        <span className="text-gray-400 font-normal text-xs ml-2">
+                                          {v.moyen}
+                                        </span>
+                                      </p>
+                                      <p className="text-xs text-gray-400">
+                                        {formatDate(v.date)}
+                                        {v.note && ` — ${v.note}`}
+                                      </p>
+                                    </div>
+                                    {cmd.statut === "Confirme" && (
+                                      <button onClick={() => supprimerVersement(cmd, i)}
+                                        className="text-gray-300 hover:text-red-500 transition text-lg px-2">
+                                        x
+                                      </button>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Recap */}
+                            {aDesVersements && (
+                              <div className="mt-3 bg-gray-900 rounded-xl p-4 text-white">
+                                <div className="grid grid-cols-3 gap-3 text-center">
                                   <div>
-                                    <p className="text-sm font-medium">
-                                      {formatPrix(v.montant)}
-                                      <span className="text-gray-400 font-normal text-xs ml-2">
-                                        {v.moyen}
-                                      </span>
-                                    </p>
-                                    <p className="text-xs text-gray-400">
-                                      {formatDate(v.date)}
-                                      {v.note && ` — ${v.note}`}
+                                    <p className="text-gray-400 text-xs mb-1">Total</p>
+                                    <p className="font-black text-sm">{formatPrix(p.total)}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-gray-400 text-xs mb-1">Paye</p>
+                                    <p className="font-black text-sm text-green-400">{formatPrix(p.paye)}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-gray-400 text-xs mb-1">Reste</p>
+                                    <p className={`font-black text-sm ${p.reste > 0 ? "text-orange-400" : "text-green-400"}`}>
+                                      {formatPrix(p.reste)}
                                     </p>
                                   </div>
-                                  <button onClick={() => supprimerVersement(cmd, i)}
-                                    className="text-gray-300 hover:text-red-500 transition text-lg px-2">
-                                    x
-                                  </button>
                                 </div>
-                              ))}
-                            </div>
-                          )}
+                              </div>
+                            )}
 
-                          {/* Recap paiement */}
-                          <div className="mt-3 bg-gray-900 rounded-xl p-4 text-white">
-                            <div className="grid grid-cols-3 gap-3 text-center">
-                              <div>
-                                <p className="text-gray-400 text-xs mb-1">Total</p>
-                                <p className="font-black text-sm">{formatPrix(p.total)}</p>
-                              </div>
-                              <div>
-                                <p className="text-gray-400 text-xs mb-1">Paye</p>
-                                <p className="font-black text-sm text-green-400">{formatPrix(p.paye)}</p>
-                              </div>
-                              <div>
-                                <p className="text-gray-400 text-xs mb-1">Reste</p>
-                                <p className={`font-black text-sm ${p.reste > 0 ? "text-orange-400" : "text-green-400"}`}>
-                                  {formatPrix(p.reste)}
+                            {/* Avertissement livree impayee */}
+                            {cmd.statut === "Livre" && aDesVersements && p.reste > 0 && (
+                              <div className="mt-3 bg-orange-50 border border-orange-200 rounded-xl p-3">
+                                <p className="text-sm font-bold text-orange-700">
+                                  Livree avec {formatPrix(p.reste)} impaye
+                                </p>
+                                <p className="text-xs text-orange-600 mt-0.5">
+                                  Repasse la commande en "Confirme" pour enregistrer le solde
                                 </p>
                               </div>
-                            </div>
+                            )}
                           </div>
-                        </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -493,7 +570,7 @@ export default function AdminOrders() {
         </main>
       </div>
 
-      {/* ===== MODAL VERSEMENT ===== */}
+      {/* MODAL VERSEMENT */}
       {showVersement && cmdVersement && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center justify-center">
           <div className="bg-white rounded-t-2xl md:rounded-2xl p-6 w-full md:max-w-md max-h-[90vh] overflow-y-auto">
@@ -530,7 +607,6 @@ export default function AdminOrders() {
                   required min="1" autoFocus
                   className="w-full border-2 border-green-300 rounded-lg px-4 py-3 text-lg focus:outline-none focus:border-green-500 font-black text-green-700" />
 
-                {/* Raccourcis */}
                 <div className="flex gap-2 mt-2 flex-wrap">
                   <button type="button"
                     onClick={() => setVersementForm(f => ({ ...f, montant: String(etatCmdVersement.reste) }))}
@@ -562,7 +638,6 @@ export default function AdminOrders() {
                   placeholder="Ex: remis par son frere" />
               </div>
 
-              {/* Apercu apres versement */}
               {versementForm.montant && (
                 <div className={`border rounded-xl p-3 ${
                   Number(versementForm.montant) >= etatCmdVersement.reste
@@ -571,8 +646,7 @@ export default function AdminOrders() {
                 }`}>
                   <p className={`text-sm font-bold ${
                     Number(versementForm.montant) >= etatCmdVersement.reste
-                      ? "text-green-700"
-                      : "text-orange-700"
+                      ? "text-green-700" : "text-orange-700"
                   }`}>
                     {Number(versementForm.montant) >= etatCmdVersement.reste
                       ? "La commande sera entierement payee"
