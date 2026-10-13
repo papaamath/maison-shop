@@ -99,7 +99,6 @@ function normalise(str) {
   return String(str || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
-// Nettoie les accents pour jsPDF
 function clean(str) {
   if (!str && str !== 0) return "";
   return String(str)
@@ -114,7 +113,6 @@ function montantTexte(n) {
   return Number(n || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " FCFA";
 }
 
-// Rend compatible les anciennes ventes (un seul article) et les nouvelles (plusieurs)
 function normaliserVente(v) {
   if (Array.isArray(v.articles) && v.articles.length > 0) {
     const total = Number(v.total ?? v.articles.reduce((a, x) => a + Number(x.montant || 0), 0));
@@ -135,33 +133,34 @@ function normaliserVente(v) {
   };
 }
 
-function margeVenteTotale(v) {
+function margeTotale(v) {
   return v.articles.reduce(
     (a, x) => a + (Number(x.prixUnitaire || 0) - Number(x.prixAchatUnitaire || 0)) * Number(x.quantite || 0),
     0
   );
 }
 
-function numeroFacture(v) {
+function numeroDoc(v, prefixe) {
   const d = v.createdAt?.seconds ? new Date(v.createdAt.seconds * 1000) : new Date();
   const an = d.getFullYear();
   const mois = String(d.getMonth() + 1).padStart(2, "0");
   const suffixe = String(v.id || "").slice(-5).toUpperCase();
-  return `FA-${an}${mois}-${suffixe}`;
+  return `${prefixe}-${an}${mois}-${suffixe}`;
 }
 
-// ===== FACTURE PDF =====
-async function genererFacture(vente) {
-  const v = normaliserVente(vente);
+// ===== PDF : facture ou devis =====
+async function genererDocument(venteBrute, type = "facture") {
+  const v = normaliserVente(venteBrute);
+  const estDevis = type === "devis";
   const docu = new jsPDF();
 
   const NOIR = [26, 26, 24];
   const GRIS = [107, 107, 101];
   const GRIS_CLAIR = [245, 244, 240];
   const VERT = [34, 139, 34];
+  const BLEU = [30, 80, 160];
   const ORANGE = [249, 115, 22];
 
-  // Bandeau
   docu.setFillColor(...NOIR);
   docu.rect(0, 0, 210, 48, "F");
 
@@ -169,8 +168,7 @@ async function genererFacture(vente) {
     const img = new Image();
     img.crossOrigin = "anonymous";
     await new Promise((res, rej) => {
-      img.onload = res;
-      img.onerror = rej;
+      img.onload = res; img.onerror = rej;
       img.src = "https://res.cloudinary.com/dy2tgofmf/image/upload/logo_k9rogt";
     });
     const cv = document.createElement("canvas");
@@ -191,21 +189,19 @@ async function genererFacture(vente) {
 
   docu.setFont("helvetica", "bold");
   docu.setFontSize(18);
-  docu.text("FACTURE", 198, 19, { align: "right" });
+  docu.text(estDevis ? "DEVIS" : "FACTURE", 198, 19, { align: "right" });
   docu.setFont("helvetica", "normal");
   docu.setFontSize(9);
-  docu.text(clean(numeroFacture(v)), 198, 27, { align: "right" });
+  docu.text(clean(numeroDoc(v, estDevis ? "DV" : "FA")), 198, 27, { align: "right" });
   docu.text(clean(formatDateLongue(v.createdAt)), 198, 33, { align: "right" });
 
-  // Badge paye
-  docu.setFillColor(...VERT);
-  docu.roundedRect(160, 37, 38, 8, 2, 2, "F");
+  docu.setFillColor(...(estDevis ? BLEU : VERT));
+  docu.roundedRect(158, 37, 40, 8, 2, 2, "F");
   docu.setTextColor(255, 255, 255);
   docu.setFont("helvetica", "bold");
   docu.setFontSize(8);
-  docu.text("PAYE", 179, 42.5, { align: "center" });
+  docu.text(estDevis ? "PROPOSITION" : "PAYE", 178, 42.5, { align: "center" });
 
-  // Bloc client
   docu.setFillColor(...GRIS_CLAIR);
   docu.rect(0, 53, 210, 26, "F");
 
@@ -224,15 +220,12 @@ async function genererFacture(vente) {
   docu.setTextColor(...GRIS);
   docu.text(`Date : ${clean(formatDateLongue(v.createdAt))}`, 140, 71);
 
-  // Tableau articles
   autoTable(docu, {
     startY: 87,
     head: [["Designation", "Qte", "Prix unitaire", "Montant"]],
     body: v.articles.map(a => [
-      clean(a.nom),
-      String(a.quantite),
-      montantTexte(a.prixUnitaire),
-      montantTexte(a.montant),
+      clean(a.nom), String(a.quantite),
+      montantTexte(a.prixUnitaire), montantTexte(a.montant),
     ]),
     headStyles: {
       fillColor: NOIR, textColor: [255, 255, 255],
@@ -252,7 +245,6 @@ async function genererFacture(vente) {
 
   let y = docu.lastAutoTable.finalY + 12;
 
-  // Total
   docu.setFillColor(...NOIR);
   docu.rect(125, y, 70, 14, "F");
   docu.setTextColor(255, 255, 255);
@@ -263,16 +255,26 @@ async function genererFacture(vente) {
 
   y += 24;
 
-  // Mention reglement
   docu.setTextColor(...GRIS);
   docu.setFont("helvetica", "normal");
   docu.setFontSize(9);
-  docu.text(
-    `Facture acquittee le ${clean(formatDateLongue(v.createdAt))}. Montant recu : ${montantTexte(v.total)}.`,
-    15, y
-  );
+  if (estDevis) {
+    docu.text("Devis valable 15 jours a compter de la date d'emission.", 15, y);
+    docu.text("Les prix peuvent varier en fonction de la disponibilite du stock.", 15, y + 6);
 
-  // Pied de page
+    y += 20;
+    docu.setDrawColor(...GRIS);
+    docu.setLineWidth(0.3);
+    docu.line(120, y + 16, 195, y + 16);
+    docu.setFontSize(8);
+    docu.text("Bon pour accord — signature du client", 157, y + 21, { align: "center" });
+  } else {
+    docu.text(
+      `Facture acquittee le ${clean(formatDateLongue(v.createdAt))}. Montant recu : ${montantTexte(v.total)}.`,
+      15, y
+    );
+  }
+
   const h = docu.internal.pageSize.height;
   docu.setFillColor(...GRIS_CLAIR);
   docu.rect(0, h - 26, 210, 26, "F");
@@ -283,7 +285,7 @@ async function genererFacture(vente) {
   docu.setTextColor(...NOIR);
   docu.setFont("helvetica", "bold");
   docu.setFontSize(9);
-  docu.text("Merci de votre confiance !", 105, h - 16, { align: "center" });
+  docu.text(estDevis ? "Au plaisir de vous servir !" : "Merci de votre confiance !", 105, h - 16, { align: "center" });
   docu.setFont("helvetica", "normal");
   docu.setFontSize(8);
   docu.setTextColor(...GRIS);
@@ -293,7 +295,7 @@ async function genererFacture(vente) {
   );
 
   const nomFichier = clean(v.client || "client").replace(/\s+/g, "-").toLowerCase();
-  docu.save(`facture-${nomFichier}-${numeroFacture(v)}.pdf`);
+  docu.save(`${estDevis ? "devis" : "facture"}-${nomFichier}-${numeroDoc(v, estDevis ? "DV" : "FA")}.pdf`);
 }
 
 const ARTICLE_VIDE = { nom: "", categorie: "Cahiers", prixAchat: "", prixVente: "", stock: "" };
@@ -303,6 +305,7 @@ const LIGNE_VIDE = { articleId: "", quantite: "1", prixUnitaire: "" };
 export default function Scolaire() {
   const [articles, setArticles] = useState([]);
   const [ventes, setVentes] = useState([]);
+  const [devis, setDevis] = useState([]);
   const [depenses, setDepenses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -315,13 +318,16 @@ export default function Scolaire() {
   const [rechercheStock, setRechercheStock] = useState("");
   const [filtreCategorie, setFiltreCategorie] = useState("Tous");
   const [rechercheVentes, setRechercheVentes] = useState("");
+  const [rechercheDevis, setRechercheDevis] = useState("");
 
   const [showArticleForm, setShowArticleForm] = useState(false);
   const [editingArticle, setEditingArticle] = useState(null);
   const [articleForm, setArticleForm] = useState(ARTICLE_VIDE);
 
-  // ===== PANIER DE VENTE =====
-  const [showVenteForm, setShowVenteForm] = useState(false);
+  // Panier partage entre vente et devis
+  const [showPanier, setShowPanier] = useState(false);
+  const [modePanier, setModePanier] = useState("vente");  // "vente" | "devis"
+  const [devisEnEdition, setDevisEnEdition] = useState(null);
   const [panier, setPanier] = useState([]);
   const [clientVente, setClientVente] = useState("");
   const [rechercheArticle, setRechercheArticle] = useState("");
@@ -336,13 +342,15 @@ export default function Scolaire() {
   useEffect(() => { charger(); }, []);
 
   async function charger() {
-    const [artSnap, venSnap, depSnap] = await Promise.all([
+    const [artSnap, venSnap, devSnap, depSnap] = await Promise.all([
       getDocs(collection(db, "scolaire_articles")),
       getDocs(collection(db, "scolaire_ventes")),
+      getDocs(collection(db, "scolaire_devis")),
       getDocs(collection(db, "scolaire_depenses")),
     ]);
     setArticles(artSnap.docs.map(d => ({ id: d.id, ...d.data() })));
     setVentes(venSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+    setDevis(devSnap.docs.map(d => ({ id: d.id, ...d.data() })));
     setDepenses(depSnap.docs.map(d => ({ id: d.id, ...d.data() })));
     setLoading(false);
   }
@@ -391,7 +399,7 @@ export default function Scolaire() {
   }
 
   async function supprimerArticle(id) {
-    if (!confirm("Supprimer cet article ? L'historique des ventes sera conserve.")) return;
+    if (!confirm("Supprimer cet article ? L'historique sera conserve.")) return;
     await deleteDoc(doc(db, "scolaire_articles", id));
     await charger();
   }
@@ -412,12 +420,25 @@ export default function Scolaire() {
   }
 
   // ===== PANIER =====
-  function ouvrirVente() {
+  function ouvrirPanier(mode) {
+    setModePanier(mode);
+    setDevisEnEdition(null);
     setPanier([]);
     setClientVente("");
     setLigne(LIGNE_VIDE);
     setRechercheArticle("");
-    setShowVenteForm(true);
+    setShowPanier(true);
+  }
+
+  function ouvrirEditionDevis(d) {
+    const dv = normaliserVente(d);
+    setModePanier("devis");
+    setDevisEnEdition(d.id);
+    setPanier(dv.articles.map(a => ({ ...a })));
+    setClientVente(dv.client || "");
+    setLigne(LIGNE_VIDE);
+    setRechercheArticle("");
+    setShowPanier(true);
   }
 
   function choisirArticle(art) {
@@ -433,18 +454,19 @@ export default function Scolaire() {
     const pu = Number(ligne.prixUnitaire);
     if (qte < 1 || pu < 1) { alert("Quantite et prix doivent etre renseignes."); return; }
 
-    // Stock deja reserve dans le panier pour cet article
-    const dejaDansPanier = panier
-      .filter(l => l.articleId === art.id)
-      .reduce((a, l) => a + l.quantite, 0);
+    // Le controle de stock ne s'applique qu'aux ventes
+    if (modePanier === "vente") {
+      const dejaDansPanier = panier
+        .filter(l => l.articleId === art.id)
+        .reduce((a, l) => a + l.quantite, 0);
 
-    if (qte + dejaDansPanier > Number(art.stock || 0)) {
-      alert(
-        `Stock insuffisant pour "${art.nom}".\n` +
-        `Disponible : ${art.stock}\n` +
-        `Deja dans ce panier : ${dejaDansPanier}`
-      );
-      return;
+      if (qte + dejaDansPanier > Number(art.stock || 0)) {
+        alert(
+          `Stock insuffisant pour "${art.nom}".\n` +
+          `Disponible : ${art.stock}\nDeja dans ce panier : ${dejaDansPanier}`
+        );
+        return;
+      }
     }
 
     setPanier(p => [...p, {
@@ -463,24 +485,58 @@ export default function Scolaire() {
     setPanier(p => p.filter((_, i) => i !== index));
   }
 
+  function modifierQuantite(index, nouvelleQte) {
+    const qte = Number(nouvelleQte);
+    if (qte < 1) return;
+    setPanier(p => p.map((l, i) =>
+      i === index ? { ...l, quantite: qte, montant: qte * l.prixUnitaire } : l
+    ));
+  }
+
   const totalPanier = panier.reduce((a, l) => a + l.montant, 0);
   const margePanier = panier.reduce(
     (a, l) => a + (l.prixUnitaire - l.prixAchatUnitaire) * l.quantite, 0
   );
 
-  async function validerVente(e) {
+  async function validerPanier(e) {
     e.preventDefault();
     if (panier.length === 0) { alert("Le panier est vide."); return; }
 
     setSaving(true);
     try {
-      // Regroupe les quantites par article pour le decompte du stock
+      // ===== DEVIS : pas de mouvement de stock =====
+      if (modePanier === "devis") {
+        const data = {
+          client: clientVente.trim(),
+          articles: panier,
+          total: totalPanier,
+        };
+        if (devisEnEdition) {
+          await updateDoc(doc(db, "scolaire_devis", devisEnEdition), {
+            ...data,
+            modifieLe: serverTimestamp(),
+          });
+        } else {
+          await addDoc(collection(db, "scolaire_devis"), {
+            ...data,
+            createdAt: serverTimestamp(),
+          });
+        }
+        await charger();
+        setShowPanier(false);
+        setDevisEnEdition(null);
+        setPanier([]);
+        setClientVente("");
+        setSaving(false);
+        return;
+      }
+
+      // ===== VENTE : decompte du stock =====
       const parArticle = {};
       panier.forEach(l => {
         parArticle[l.articleId] = (parArticle[l.articleId] || 0) + l.quantite;
       });
 
-      // Verification finale du stock
       for (const [id, qte] of Object.entries(parArticle)) {
         const art = articles.find(a => a.id === id);
         if (!art || qte > Number(art.stock || 0)) {
@@ -505,7 +561,7 @@ export default function Scolaire() {
       }
 
       await charger();
-      setShowVenteForm(false);
+      setShowPanier(false);
       setPanier([]);
       setClientVente("");
     } catch (err) {
@@ -513,6 +569,75 @@ export default function Scolaire() {
       alert("Erreur lors de l'enregistrement.");
     }
     setSaving(false);
+  }
+
+  // ===== DEVIS : conversion en vente =====
+  async function convertirDevis(devisBrut) {
+    const dv = normaliserVente(devisBrut);
+
+    // Verification du stock avant conversion
+    const parArticle = {};
+    dv.articles.forEach(l => {
+      if (l.articleId) parArticle[l.articleId] = (parArticle[l.articleId] || 0) + Number(l.quantite || 0);
+    });
+
+    const manquants = [];
+    for (const [id, qte] of Object.entries(parArticle)) {
+      const art = articles.find(a => a.id === id);
+      if (!art) {
+        manquants.push("Un article a ete supprime du stock");
+      } else if (qte > Number(art.stock || 0)) {
+        manquants.push(`${art.nom} : ${qte} demandes, ${art.stock} disponibles`);
+      }
+    }
+
+    if (manquants.length > 0) {
+      alert(
+        "Impossible de convertir ce devis, le stock ne suit pas :\n\n" +
+        manquants.join("\n") +
+        "\n\nReapprovisionne ou modifie le devis."
+      );
+      return;
+    }
+
+    if (!confirm(
+      `Convertir ce devis en vente ?\n\n` +
+      `Client : ${dv.client || "Client comptoir"}\n` +
+      `Total : ${formatPrix(dv.total)}\n\n` +
+      `Le stock sera decompte et le devis disparaitra de la liste.`
+    )) return;
+
+    setSaving(true);
+    try {
+      await addDoc(collection(db, "scolaire_ventes"), {
+        client: dv.client || "",
+        articles: dv.articles,
+        total: dv.total,
+        issuDuDevis: numeroDoc(dv, "DV"),
+        createdAt: serverTimestamp(),
+      });
+
+      for (const [id, qte] of Object.entries(parArticle)) {
+        const art = articles.find(a => a.id === id);
+        await updateDoc(doc(db, "scolaire_articles", id), {
+          stock: Number(art.stock || 0) - qte,
+        });
+      }
+
+      await deleteDoc(doc(db, "scolaire_devis", devisBrut.id));
+      await charger();
+      setOnglet("ventes");
+    } catch (err) {
+      console.error(err);
+      alert("Erreur lors de la conversion.");
+    }
+    setSaving(false);
+  }
+
+  async function supprimerDevis(id) {
+    if (!confirm("Supprimer ce devis ?")) return;
+    await deleteDoc(doc(db, "scolaire_devis", id));
+    await charger();
   }
 
   async function supprimerVente(venteBrute) {
@@ -559,19 +684,21 @@ export default function Scolaire() {
 
   // ===== CALCULS =====
   const ventesN = ventes.map(normaliserVente);
+  const devisN = devis.map(normaliserVente);
 
   const totalRecettesGlobal = ventesN.reduce((a, v) => a + v.total, 0);
   const totalDepensesGlobal = depenses.reduce((a, d) => a + Number(d.montant || 0), 0);
   const beneficeGlobal = totalRecettesGlobal - totalDepensesGlobal;
   const valeurStock = articles.reduce((a, x) => a + Number(x.stock || 0) * Number(x.prixVente || 0), 0);
   const valeurStockAchat = articles.reduce((a, x) => a + Number(x.stock || 0) * Number(x.prixAchat || 0), 0);
+  const totalDevis = devisN.reduce((a, d) => a + d.total, 0);
 
   const ventesDuMois = ventesN.filter(v => estDansMois(v.createdAt, moisSelectionne, anneeSelectionnee));
   const depensesDuMois = depenses.filter(d => estDansMois(d.createdAt, moisSelectionne, anneeSelectionnee));
   const totalRecettesMois = ventesDuMois.reduce((a, v) => a + v.total, 0);
   const totalDepensesMois = depensesDuMois.reduce((a, d) => a + Number(d.montant || 0), 0);
   const beneficeMois = totalRecettesMois - totalDepensesMois;
-  const margeMois = ventesDuMois.reduce((a, v) => a + margeVenteTotale(v), 0);
+  const margeMois = ventesDuMois.reduce((a, v) => a + margeTotale(v), 0);
 
   const ruptures = articles.filter(a => Number(a.stock || 0) === 0);
   const stockFaible = articles.filter(a => { const s = Number(a.stock || 0); return s > 0 && s <= 5; });
@@ -597,8 +724,7 @@ export default function Scolaire() {
   const articlesFiltres = articles
     .filter(a => {
       const matchCat = filtreCategorie === "Tous" || a.categorie === filtreCategorie;
-      const matchNom = normalise(a.nom).includes(normalise(rechercheStock));
-      return matchCat && matchNom;
+      return matchCat && normalise(a.nom).includes(normalise(rechercheStock));
     })
     .sort((a, b) => (a.nom || "").localeCompare(b.nom || ""));
 
@@ -609,18 +735,39 @@ export default function Scolaire() {
     .filter(v => {
       const q = normalise(rechercheVentes);
       if (!q) return true;
-      return normalise(v.client).includes(q) ||
-        v.articles.some(l => normalise(l.nom).includes(q));
+      return normalise(v.client).includes(q) || v.articles.some(l => normalise(l.nom).includes(q));
     })
     .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
 
   const totalVentesFiltrees = ventesFiltrees.reduce((a, v) => a + v.total, 0);
+
+  const devisFiltres = devisN
+    .filter(d => {
+      const q = normalise(rechercheDevis);
+      if (!q) return true;
+      return normalise(d.client).includes(q) || d.articles.some(l => normalise(l.nom).includes(q));
+    })
+    .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
 
   const articlesPourVente = articles.filter(a =>
     normalise(a.nom).includes(normalise(rechercheArticle))
   );
 
   const articleLigne = articles.find(a => a.id === ligne.articleId);
+  const estModeDevis = modePanier === "devis";
+
+  // Un devis est-il realisable avec le stock actuel ?
+  function devisRealisable(d) {
+    const parArticle = {};
+    d.articles.forEach(l => {
+      if (l.articleId) parArticle[l.articleId] = (parArticle[l.articleId] || 0) + Number(l.quantite || 0);
+    });
+    for (const [id, qte] of Object.entries(parArticle)) {
+      const art = articles.find(a => a.id === id);
+      if (!art || qte > Number(art.stock || 0)) return false;
+    }
+    return true;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -632,14 +779,18 @@ export default function Scolaire() {
           <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
             <div>
               <h2 className="font-black text-xl md:text-2xl">Fournitures scolaires</h2>
-              <p className="text-gray-400 text-sm mt-1">Stock, ventes et depenses — comptabilite separee</p>
+              <p className="text-gray-400 text-sm mt-1">Stock, devis, ventes et depenses</p>
             </div>
             <div className="flex gap-2 flex-wrap">
               <button onClick={() => setShowDepenseForm(true)}
                 className="bg-red-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition">
                 + Depense
               </button>
-              <button onClick={ouvrirVente}
+              <button onClick={() => ouvrirPanier("devis")}
+                className="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition">
+                + Devis
+              </button>
+              <button onClick={() => ouvrirPanier("vente")}
                 className="bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition">
                 + Vente
               </button>
@@ -669,16 +820,22 @@ export default function Scolaire() {
                     {beneficeGlobal >= 0 ? "+" : ""}{formatPrix(beneficeGlobal)}
                   </p>
                 </div>
-                <div className="bg-gray-100 border border-gray-300 rounded-2xl p-4">
-                  <p className="text-gray-600 text-xs font-bold uppercase mb-1">Achat total du stock</p>
-                  <p className="font-black text-lg text-gray-800">{formatPrix(valeurStockAchat)}</p>
-                  <p className="text-gray-500 text-xs mt-1">Ce que le stock t'a coute</p>
+                <div className={`${devis.length > 0 ? "bg-indigo-50 border-indigo-200" : "bg-gray-100 border-gray-300"} border rounded-2xl p-4`}>
+                  <p className={`${devis.length > 0 ? "text-indigo-600" : "text-gray-500"} text-xs font-bold uppercase mb-1`}>
+                    Devis en cours
+                  </p>
+                  <p className={`font-black text-lg ${devis.length > 0 ? "text-indigo-700" : "text-gray-600"}`}>
+                    {formatPrix(totalDevis)}
+                  </p>
+                  <p className={`${devis.length > 0 ? "text-indigo-500" : "text-gray-400"} text-xs mt-1`}>
+                    {devis.length} devis en attente
+                  </p>
                 </div>
                 <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4">
                   <p className="text-purple-600 text-xs font-bold uppercase mb-1">Valeur de revente</p>
                   <p className="font-black text-lg text-purple-700">{formatPrix(valeurStock)}</p>
                   <p className="text-purple-500 text-xs mt-1">
-                    Marge : {formatPrix(valeurStock - valeurStockAchat)}
+                    Achat : {formatPrix(valeurStockAchat)}
                   </p>
                 </div>
               </div>
@@ -706,6 +863,7 @@ export default function Scolaire() {
                 {[
                   { id: "bilan", label: "Bilan du mois" },
                   { id: "stock", label: `Mon stock (${articles.length})` },
+                  { id: "devis", label: `Devis (${devis.length})` },
                   { id: "ventes", label: `Ventes (${ventes.length})` },
                   { id: "depenses", label: `Depenses (${depenses.length})` },
                 ].map(o => (
@@ -715,6 +873,121 @@ export default function Scolaire() {
                   </button>
                 ))}
               </div>
+
+              {/* ===== DEVIS ===== */}
+              {onglet === "devis" && (
+                <>
+                  <div className="bg-white rounded-xl border border-gray-200 p-4 mb-5">
+                    <input value={rechercheDevis} onChange={e => setRechercheDevis(e.target.value)}
+                      placeholder="Rechercher un devis par client ou article..."
+                      className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400" />
+                  </div>
+
+                  <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                    <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+                      <div>
+                        <h3 className="font-bold text-base">
+                          Devis en cours
+                          <span className="text-gray-400 font-normal ml-2 text-sm">({devisFiltres.length})</span>
+                        </h3>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          Un devis ne touche pas au stock tant qu'il n'est pas converti
+                        </p>
+                      </div>
+                      <button onClick={() => ouvrirPanier("devis")}
+                        className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">
+                        + Devis
+                      </button>
+                    </div>
+
+                    {devisFiltres.length === 0 ? (
+                      <div className="text-center py-12 text-gray-400">
+                        <p className="font-semibold">
+                          {devis.length === 0 ? "Aucun devis" : "Aucun resultat"}
+                        </p>
+                        {devis.length === 0 && (
+                          <p className="text-sm mt-1">
+                            Cree un devis pour proposer un prix sans engager ton stock
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-gray-50">
+                        {devisFiltres.map(d => {
+                          const ok = devisRealisable(d);
+                          return (
+                            <div key={d.id} className="px-4 py-3">
+                              <div className="flex items-start justify-between gap-3 mb-2">
+                                <div className="min-w-0">
+                                  <p className="font-bold text-sm">{d.client || "Client comptoir"}</p>
+                                  <p className="text-gray-400 text-xs">
+                                    {formatDate(d.createdAt)} — {numeroDoc(d, "DV")}
+                                    {d.modifieLe && " — modifie"}
+                                  </p>
+                                </div>
+                                <p className="font-black text-sm text-indigo-700 flex-shrink-0">
+                                  {formatPrix(d.total)}
+                                </p>
+                              </div>
+
+                              <div className="bg-gray-50 rounded-lg px-3 py-2 mb-2">
+                                {d.articles.map((l, i) => (
+                                  <div key={i} className="flex justify-between text-xs py-0.5">
+                                    <span className="text-gray-600">
+                                      {l.nom} x{l.quantite}
+                                      <span className="text-gray-400"> a {formatPrix(l.prixUnitaire)}</span>
+                                    </span>
+                                    <span className="font-medium text-gray-700">{formatPrix(l.montant)}</span>
+                                  </div>
+                                ))}
+                              </div>
+
+                              {!ok && (
+                                <div className="bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 mb-2">
+                                  <p className="text-xs font-bold text-orange-700">
+                                    Stock insuffisant pour convertir ce devis
+                                  </p>
+                                  <p className="text-xs text-orange-600 mt-0.5">
+                                    Reapprovisionne ou ajuste les quantites
+                                  </p>
+                                </div>
+                              )}
+
+                              <div className="flex gap-2 flex-wrap">
+                                <button onClick={() => convertirDevis(d)} disabled={saving || !ok}
+                                  className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-green-700 transition disabled:opacity-40">
+                                  Convertir en vente
+                                </button>
+                                <button onClick={() => ouvrirEditionDevis(d)}
+                                  className="bg-gray-100 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-200 transition">
+                                  Modifier
+                                </button>
+                                <button onClick={() => genererDocument(d, "devis")}
+                                  className="bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-100 transition">
+                                  Telecharger le devis
+                                </button>
+                                <button onClick={() => supprimerDevis(d.id)}
+                                  className="bg-red-50 text-red-600 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-red-100 transition">
+                                  Supprimer
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {devisFiltres.length > 0 && (
+                      <div className="p-4 border-t border-gray-100 flex justify-between bg-indigo-50">
+                        <span className="font-bold text-sm text-indigo-700">Total des devis en cours</span>
+                        <span className="font-black text-indigo-700">
+                          {formatPrix(devisFiltres.reduce((a, d) => a + d.total, 0))}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
 
               {/* ===== BILAN ===== */}
               {onglet === "bilan" && (
@@ -750,7 +1023,6 @@ export default function Scolaire() {
                     <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
                       <p className="text-indigo-600 text-xs font-bold mb-1">Marge sur ventes</p>
                       <p className="font-black text-lg text-indigo-700">{formatPrix(margeMois)}</p>
-                      <p className="text-indigo-500 text-xs mt-1">Vente - achat</p>
                     </div>
                   </div>
 
@@ -765,16 +1037,12 @@ export default function Scolaire() {
                         {[...ventesDuMois].sort((a,b) => (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0)).map(v => (
                           <div key={v.id} className="flex items-center justify-between px-4 py-3 gap-3">
                             <div className="min-w-0">
-                              <p className="font-medium text-sm truncate">
-                                {v.client || "Client comptoir"}
-                              </p>
+                              <p className="font-medium text-sm truncate">{v.client || "Client comptoir"}</p>
                               <p className="text-gray-400 text-xs truncate">
                                 {formatDate(v.createdAt)} — {v.articles.map(l => `${l.nom} x${l.quantite}`).join(", ")}
                               </p>
                             </div>
-                            <p className="font-black text-sm text-green-600 flex-shrink-0">
-                              +{formatPrix(v.total)}
-                            </p>
+                            <p className="font-black text-sm text-green-600 flex-shrink-0">+{formatPrix(v.total)}</p>
                           </div>
                         ))}
                       </div>
@@ -933,9 +1201,7 @@ export default function Scolaire() {
                                   </div>
                                   <div>
                                     <span className="text-xs text-gray-400">Gain : </span>
-                                    <span className="text-xs font-black text-indigo-600">
-                                      {formatPrix(stock * (pv - pa))}
-                                    </span>
+                                    <span className="text-xs font-black text-indigo-600">{formatPrix(stock * (pv - pa))}</span>
                                   </div>
                                 </div>
                               )}
@@ -1018,7 +1284,7 @@ export default function Scolaire() {
                         Historique des ventes
                         <span className="text-gray-400 font-normal ml-2 text-sm">({ventesFiltrees.length})</span>
                       </h3>
-                      <button onClick={ouvrirVente}
+                      <button onClick={() => ouvrirPanier("vente")}
                         className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">
                         + Vente
                       </button>
@@ -1034,11 +1300,10 @@ export default function Scolaire() {
                           <div key={v.id} className="px-4 py-3">
                             <div className="flex items-start justify-between gap-3 mb-2">
                               <div className="min-w-0">
-                                <p className="font-bold text-sm">
-                                  {v.client || "Client comptoir"}
-                                </p>
+                                <p className="font-bold text-sm">{v.client || "Client comptoir"}</p>
                                 <p className="text-gray-400 text-xs">
-                                  {formatDate(v.createdAt)} — {numeroFacture(v)}
+                                  {formatDate(v.createdAt)} — {numeroDoc(v, "FA")}
+                                  {v.issuDuDevis && ` — issu du ${v.issuDuDevis}`}
                                 </p>
                               </div>
                               <p className="font-black text-sm text-green-600 flex-shrink-0">
@@ -1059,7 +1324,7 @@ export default function Scolaire() {
                             </div>
 
                             <div className="flex gap-2">
-                              <button onClick={() => genererFacture(v)}
+                              <button onClick={() => genererDocument(v, "facture")}
                                 className="bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-100 transition">
                                 Telecharger la facture
                               </button>
@@ -1125,37 +1390,49 @@ export default function Scolaire() {
         </main>
       </div>
 
-      {/* ===== MODAL VENTE (PANIER) ===== */}
-      {showVenteForm && (
+      {/* ===== MODAL PANIER (vente ou devis) ===== */}
+      {showPanier && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center justify-center">
           <div className="bg-white rounded-t-2xl md:rounded-2xl p-6 w-full md:max-w-2xl max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">
-              <h3 className="font-black text-lg">Nouvelle vente</h3>
-              <button onClick={() => setShowVenteForm(false)} className="text-gray-400 text-xl">X</button>
+              <div>
+                <h3 className="font-black text-lg">
+                  {estModeDevis
+                    ? (devisEnEdition ? "Modifier le devis" : "Nouveau devis")
+                    : "Nouvelle vente"}
+                </h3>
+                {estModeDevis && (
+                  <p className="text-xs text-blue-600 mt-0.5">
+                    Le stock ne sera pas touche
+                  </p>
+                )}
+              </div>
+              <button onClick={() => { setShowPanier(false); setDevisEnEdition(null); }}
+                className="text-gray-400 text-xl">X</button>
             </div>
 
             {articles.length === 0 ? (
               <div className="text-center py-8">
                 <p className="text-gray-500 mb-4">Ajoute d'abord des articles a ton stock.</p>
-                <button onClick={() => { setShowVenteForm(false); ouvrirNouvelArticle(); }}
+                <button onClick={() => { setShowPanier(false); ouvrirNouvelArticle(); }}
                   className="bg-gray-900 text-white px-5 py-2.5 rounded-lg font-medium">
                   + Creer un article
                 </button>
               </div>
             ) : (
-              <form onSubmit={validerVente} className="space-y-5">
+              <form onSubmit={validerPanier} className="space-y-5">
 
-                {/* Client */}
                 <div>
                   <label className="text-sm text-gray-500 block mb-1">
-                    Nom du client <span className="text-gray-400 font-normal">(pour la facture)</span>
+                    Nom du client <span className="text-gray-400 font-normal">
+                      (pour {estModeDevis ? "le devis" : "la facture"})
+                    </span>
                   </label>
                   <input value={clientVente} onChange={e => setClientVente(e.target.value)}
                     className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400"
                     placeholder="Ex: Fatou Sow" />
                 </div>
 
-                {/* Ajout d'une ligne */}
                 <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
                   <p className="font-bold text-sm">Ajouter un article</p>
 
@@ -1174,10 +1451,11 @@ export default function Scolaire() {
                               .filter(l => l.articleId === a.id)
                               .reduce((s, l) => s + l.quantite, 0);
                             const dispo = Number(a.stock || 0) - dejaPris;
+                            const bloque = !estModeDevis && dispo <= 0;
                             return (
-                              <button key={a.id} type="button" disabled={dispo <= 0}
+                              <button key={a.id} type="button" disabled={bloque}
                                 onClick={() => choisirArticle(a)}
-                                className={`w-full text-left px-3 py-2.5 transition ${dispo <= 0 ? "opacity-40 cursor-not-allowed" : "hover:bg-gray-50"}`}>
+                                className={`w-full text-left px-3 py-2.5 transition ${bloque ? "opacity-40 cursor-not-allowed" : "hover:bg-gray-50"}`}>
                                 <div className="flex items-center justify-between gap-2">
                                   <div className="min-w-0">
                                     <p className="font-medium text-sm truncate">{a.nom}</p>
@@ -1235,33 +1513,45 @@ export default function Scolaire() {
 
                       <button type="button" onClick={ajouterAuPanier}
                         className="w-full bg-gray-900 text-white py-2.5 rounded-lg font-bold text-sm hover:bg-gray-700 transition">
-                        Ajouter au panier
+                        Ajouter {estModeDevis ? "au devis" : "au panier"}
                       </button>
                     </div>
                   )}
                 </div>
 
-                {/* Panier */}
                 <div>
                   <p className="font-bold text-sm mb-2">
-                    Panier
-                    <span className="text-gray-400 font-normal ml-2">({panier.length} ligne(s))</span>
+                    {estModeDevis ? "Lignes du devis" : "Panier"}
+                    <span className="text-gray-400 font-normal ml-2">({panier.length})</span>
                   </p>
 
                   {panier.length === 0 ? (
                     <p className="text-sm text-gray-400 text-center py-6 bg-gray-50 rounded-xl">
-                      Aucun article dans le panier
+                      Aucun article
                     </p>
                   ) : (
                     <div className="border border-gray-200 rounded-xl overflow-hidden">
                       {panier.map((l, i) => (
                         <div key={i}
                           className="flex items-center justify-between gap-3 px-3 py-2.5 border-b border-gray-50 last:border-0">
-                          <div className="min-w-0">
+                          <div className="min-w-0 flex-1">
                             <p className="font-medium text-sm truncate">{l.nom}</p>
-                            <p className="text-gray-400 text-xs">
-                              {l.quantite} x {formatPrix(l.prixUnitaire)}
-                            </p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <button type="button"
+                                onClick={() => modifierQuantite(i, l.quantite - 1)}
+                                className="w-6 h-6 bg-gray-100 hover:bg-gray-200 rounded text-sm font-bold transition">
+                                -
+                              </button>
+                              <span className="text-sm font-bold min-w-6 text-center">{l.quantite}</span>
+                              <button type="button"
+                                onClick={() => modifierQuantite(i, l.quantite + 1)}
+                                className="w-6 h-6 bg-gray-100 hover:bg-gray-200 rounded text-sm font-bold transition">
+                                +
+                              </button>
+                              <span className="text-gray-400 text-xs ml-1">
+                                a {formatPrix(l.prixUnitaire)}
+                              </span>
+                            </div>
                           </div>
                           <div className="flex items-center gap-3 flex-shrink-0">
                             <span className="font-black text-sm">{formatPrix(l.montant)}</span>
@@ -1281,20 +1571,23 @@ export default function Scolaire() {
                   {panier.length > 0 && (
                     <div className={`mt-2 border rounded-xl p-3 ${margePanier >= 0 ? "bg-indigo-50 border-indigo-200" : "bg-red-50 border-red-200"}`}>
                       <p className={`text-sm font-bold ${margePanier >= 0 ? "text-indigo-700" : "text-red-700"}`}>
-                        Marge sur cette vente : {margePanier >= 0 ? "+" : ""}{formatPrix(margePanier)}
+                        Marge {estModeDevis ? "prevue" : "sur cette vente"} : {margePanier >= 0 ? "+" : ""}{formatPrix(margePanier)}
                       </p>
                     </div>
                   )}
                 </div>
 
                 <div className="flex gap-3">
-                  <button type="button" onClick={() => setShowVenteForm(false)}
+                  <button type="button" onClick={() => { setShowPanier(false); setDevisEnEdition(null); }}
                     className="flex-1 border border-gray-200 text-gray-600 py-3 rounded-lg font-medium">
                     Annuler
                   </button>
                   <button type="submit" disabled={saving || panier.length === 0}
-                    className="flex-1 bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700 disabled:opacity-40">
-                    {saving ? "Enregistrement..." : `Valider — ${formatPrix(totalPanier)}`}
+                    className={`flex-1 text-white py-3 rounded-lg font-bold disabled:opacity-40 ${estModeDevis ? "bg-blue-600 hover:bg-blue-700" : "bg-green-600 hover:bg-green-700"}`}>
+                    {saving ? "Enregistrement..."
+                      : estModeDevis
+                        ? (devisEnEdition ? "Enregistrer les modifications" : `Creer le devis — ${formatPrix(totalPanier)}`)
+                        : `Valider — ${formatPrix(totalPanier)}`}
                   </button>
                 </div>
               </form>
