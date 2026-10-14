@@ -15,12 +15,25 @@ const CATEGORIES_DEPENSES = [
   "Autre",
 ];
 
+const CATEGORIES_RECETTES = [
+  "Apport personnel",
+  "Vente hors boutique",
+  "Service rendu",
+  "Remboursement recu",
+  "Emprunt recu",
+  "Don",
+  "Autre",
+];
+
+const MOYENS = ["Especes", "Wave", "Orange Money", "Free Money", "Virement", "Autre"];
+
 const NAV_LINKS = [
   { to: "/admin", label: "Dashboard" },
   { to: "/admin/products", label: "Produits" },
   { to: "/admin/orders", label: "Commandes" },
   { to: "/admin/promos", label: "Promotions" },
   { to: "/admin/caisse", label: "Caisse", active: true },
+  { to: "/admin/dettes", label: "Mes dettes" },
   { to: "/admin/journal", label: "Journal mensuel" },
   { to: "/admin/stock", label: "Valeur du stock" },
   { to: "/admin/photocopie", label: "Photocopie" },
@@ -28,7 +41,6 @@ const NAV_LINKS = [
   { to: "/admin/affiche", label: "Affiche publicitaire" },
   { to: "/admin/associes", label: "Associes" },
   { to: "/shop", label: "Voir la boutique" },
-  { to: "/admin/dettes", label: "Mes dettes" },
 ];
 
 function Sidebar() {
@@ -93,22 +105,31 @@ function formatDate(ts) {
 export default function Caisse() {
   const [commandes, setCommandes] = useState([]);
   const [depenses, setDepenses] = useState([]);
+  const [recettes, setRecettes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [onglet, setOnglet] = useState("tout");
-  const [form, setForm] = useState({ description: "", montant: "", categorie: "Achat de stock" });
+
+  const [showDepense, setShowDepense] = useState(false);
+  const [showRecette, setShowRecette] = useState(false);
+
+  const [formDep, setFormDep] = useState({ description: "", montant: "", categorie: "Achat de stock" });
+  const [formRec, setFormRec] = useState({
+    description: "", montant: "", categorie: "Apport personnel", moyen: "Especes",
+  });
 
   useEffect(() => { charger(); }, []);
 
   async function charger() {
-    const [cmdSnap, depSnap] = await Promise.all([
+    const [cmdSnap, depSnap, recSnap] = await Promise.all([
       getDocs(collection(db, "commandes")),
       getDocs(collection(db, "depenses")),
+      getDocs(collection(db, "recettes")),
     ]);
     setCommandes(cmdSnap.docs.map(d => ({ id: d.id, ...d.data() })));
     setDepenses(depSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+    setRecettes(recSnap.docs.map(d => ({ id: d.id, ...d.data() })));
     setLoading(false);
   }
 
@@ -117,14 +138,32 @@ export default function Caisse() {
     setSaving(true);
     try {
       await addDoc(collection(db, "depenses"), {
-        description: form.description,
-        montant: Number(form.montant),
-        categorie: form.categorie,
+        description: formDep.description,
+        montant: Number(formDep.montant),
+        categorie: formDep.categorie,
         createdAt: serverTimestamp(),
       });
       await charger();
-      setShowForm(false);
-      setForm({ description: "", montant: "", categorie: "Achat de stock" });
+      setShowDepense(false);
+      setFormDep({ description: "", montant: "", categorie: "Achat de stock" });
+    } catch { alert("Erreur."); }
+    setSaving(false);
+  }
+
+  async function ajouterRecette(e) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await addDoc(collection(db, "recettes"), {
+        description: formRec.description,
+        montant: Number(formRec.montant),
+        categorie: formRec.categorie,
+        moyen: formRec.moyen,
+        createdAt: serverTimestamp(),
+      });
+      await charger();
+      setShowRecette(false);
+      setFormRec({ description: "", montant: "", categorie: "Apport personnel", moyen: "Especes" });
     } catch { alert("Erreur."); }
     setSaving(false);
   }
@@ -135,15 +174,18 @@ export default function Caisse() {
     await charger();
   }
 
-  // ===== ENCAISSEMENTS REELS =====
-  // Chaque versement devient une entree de caisse.
-  // Les anciennes commandes livrees sans versement enregistre comptent
-  // pour leur total, a la date de la commande.
+  async function supprimerRecette(id) {
+    if (!confirm("Supprimer cette recette ?")) return;
+    await deleteDoc(doc(db, "recettes", id));
+    await charger();
+  }
+
+  // ===== ENTREES =====
   const encaissements = [];
 
+  // 1. Versements et ventes de la boutique
   commandes.forEach(cmd => {
     if (cmd.statut === "Annule") return;
-
     const nomClient = `${cmd.client?.prenom || ""} ${cmd.client?.nom || ""}`.trim() || "Client";
     const versements = cmd.versements || [];
 
@@ -152,6 +194,7 @@ export default function Caisse() {
         encaissements.push({
           id: `${cmd.id}-v${i}`,
           type: "recette",
+          source: "vente",
           description: `Versement — ${nomClient}`,
           montant: Number(v.montant || 0),
           categorie: v.moyen || "Versement",
@@ -160,10 +203,10 @@ export default function Caisse() {
         });
       });
     } else if (cmd.statut === "Livre") {
-      // Ancienne commande livree, avant la gestion des versements
       encaissements.push({
         id: `${cmd.id}-legacy`,
         type: "recette",
+        source: "vente",
         description: `Commande — ${nomClient}`,
         montant: Number(cmd.total || 0),
         categorie: "Vente",
@@ -171,6 +214,21 @@ export default function Caisse() {
         note: "",
       });
     }
+  });
+
+  // 2. Recettes saisies a la main
+  recettes.forEach(r => {
+    encaissements.push({
+      id: r.id,
+      type: "recette",
+      source: "manuelle",
+      description: r.description,
+      montant: Number(r.montant || 0),
+      categorie: r.categorie,
+      moyen: r.moyen || "",
+      date: r.createdAt,
+      suppressible: true,
+    });
   });
 
   const sorties = depenses.map(d => ({
@@ -183,16 +241,17 @@ export default function Caisse() {
     suppressible: true,
   }));
 
-  const totalRecettes = encaissements.reduce((a, e) => a + e.montant, 0);
+  const totalVentes = encaissements.filter(e => e.source === "vente").reduce((a, e) => a + e.montant, 0);
+  const totalAutresRecettes = encaissements.filter(e => e.source === "manuelle").reduce((a, e) => a + e.montant, 0);
+  const totalRecettes = totalVentes + totalAutresRecettes;
   const totalDepenses = sorties.reduce((a, s) => a + s.montant, 0);
   const solde = totalRecettes - totalDepenses;
 
-  // Creances : ce qui reste du par les clients
+  // Creances clients
   const creances = commandes
     .filter(c => c.statut !== "Annule")
     .reduce((a, c) => {
       const paye = (c.versements || []).reduce((s, v) => s + Number(v.montant || 0), 0);
-      // On ignore les anciennes commandes livrees sans versement : deja comptees
       if (paye === 0 && c.statut === "Livre") return a;
       return a + Math.max(0, Number(c.total || 0) - paye);
     }, 0);
@@ -204,10 +263,10 @@ export default function Caisse() {
     return Number(c.total || 0) - paye > 0;
   }).length;
 
-  // Encaissements par moyen de paiement
   const parMoyen = {};
   encaissements.forEach(e => {
-    parMoyen[e.categorie] = (parMoyen[e.categorie] || 0) + e.montant;
+    const cle = e.source === "manuelle" ? (e.moyen || e.categorie) : e.categorie;
+    parMoyen[cle] = (parMoyen[cle] || 0) + e.montant;
   });
 
   const historique = [...encaissements, ...sorties].sort((a, b) => {
@@ -218,6 +277,7 @@ export default function Caisse() {
 
   const filtrees = onglet === "tout" ? historique
     : onglet === "recettes" ? historique.filter(h => h.type === "recette")
+    : onglet === "autres" ? historique.filter(h => h.source === "manuelle")
     : historique.filter(h => h.type === "depense");
 
   const parCategorieDepense = {};
@@ -237,63 +297,76 @@ export default function Caisse() {
             <div>
               <h2 className="font-black text-xl md:text-2xl">Caisse / Tresorerie</h2>
               <p className="text-gray-400 text-sm mt-1">
-                Argent reellement encaisse, versement par versement
+                Tout l'argent qui entre et qui sort
               </p>
             </div>
-            <button onClick={() => setShowForm(true)}
-              className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition">
-              + Depense
-            </button>
+            <div className="flex gap-2">
+              <button onClick={() => setShowRecette(true)}
+                className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition">
+                + Recette
+              </button>
+              <button onClick={() => setShowDepense(true)}
+                className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition">
+                + Depense
+              </button>
+            </div>
           </div>
 
           {loading ? <div className="text-gray-400">Chargement...</div> : (
             <>
-              {/* Cartes principales */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                <div className="bg-green-50 border border-green-200 rounded-2xl p-5">
-                  <p className="text-green-600 text-xs font-semibold uppercase tracking-wide mb-2">
-                    Encaisse
-                  </p>
-                  <p className="font-black text-2xl text-green-700">{formatPrix(totalRecettes)}</p>
-                  <p className="text-green-500 text-xs mt-2">
-                    {encaissements.length} entree(s)
+              {/* Cartes */}
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+                <div className="bg-green-50 border border-green-200 rounded-2xl p-4">
+                  <p className="text-green-600 text-xs font-bold uppercase mb-1">Ventes</p>
+                  <p className="font-black text-lg text-green-700">{formatPrix(totalVentes)}</p>
+                  <p className="text-green-500 text-xs mt-1">
+                    {encaissements.filter(e => e.source === "vente").length} encaissement(s)
                   </p>
                 </div>
 
-                <div className="bg-red-50 border border-red-200 rounded-2xl p-5">
-                  <p className="text-red-600 text-xs font-semibold uppercase tracking-wide mb-2">
-                    Depenses
+                <div className={`${totalAutresRecettes > 0 ? "bg-teal-50 border-teal-200" : "bg-gray-50 border-gray-200"} border rounded-2xl p-4`}>
+                  <p className={`${totalAutresRecettes > 0 ? "text-teal-600" : "text-gray-400"} text-xs font-bold uppercase mb-1`}>
+                    Autres recettes
                   </p>
-                  <p className="font-black text-2xl text-red-700">{formatPrix(totalDepenses)}</p>
-                  <p className="text-red-500 text-xs mt-2">{depenses.length} depense(s)</p>
+                  <p className={`font-black text-lg ${totalAutresRecettes > 0 ? "text-teal-700" : "text-gray-500"}`}>
+                    {formatPrix(totalAutresRecettes)}
+                  </p>
+                  <p className={`${totalAutresRecettes > 0 ? "text-teal-500" : "text-gray-400"} text-xs mt-1`}>
+                    {recettes.length} entree(s)
+                  </p>
                 </div>
 
-                <div className={`${solde >= 0 ? "bg-blue-50 border-blue-200" : "bg-orange-50 border-orange-200"} border rounded-2xl p-5`}>
-                  <p className={`${solde >= 0 ? "text-blue-600" : "text-orange-600"} text-xs font-semibold uppercase tracking-wide mb-2`}>
+                <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
+                  <p className="text-red-600 text-xs font-bold uppercase mb-1">Depenses</p>
+                  <p className="font-black text-lg text-red-700">{formatPrix(totalDepenses)}</p>
+                  <p className="text-red-500 text-xs mt-1">{depenses.length} depense(s)</p>
+                </div>
+
+                <div className={`${solde >= 0 ? "bg-blue-50 border-blue-200" : "bg-orange-50 border-orange-200"} border rounded-2xl p-4`}>
+                  <p className={`${solde >= 0 ? "text-blue-600" : "text-orange-600"} text-xs font-bold uppercase mb-1`}>
                     Solde en caisse
                   </p>
-                  <p className={`font-black text-2xl ${solde >= 0 ? "text-blue-700" : "text-orange-700"}`}>
+                  <p className={`font-black text-lg ${solde >= 0 ? "text-blue-700" : "text-orange-700"}`}>
                     {solde >= 0 ? "+" : ""}{formatPrix(solde)}
                   </p>
-                  <p className={`${solde >= 0 ? "text-blue-500" : "text-orange-500"} text-xs mt-2`}>
-                    {solde >= 0 ? "Benefice" : "Deficit"}
+                  <p className={`${solde >= 0 ? "text-blue-500" : "text-orange-500"} text-xs mt-1`}>
+                    Entrees - sorties
                   </p>
                 </div>
 
-                <div className={`${creances > 0 ? "bg-amber-50 border-amber-200" : "bg-gray-50 border-gray-200"} border rounded-2xl p-5`}>
-                  <p className={`${creances > 0 ? "text-amber-700" : "text-gray-400"} text-xs font-semibold uppercase tracking-wide mb-2`}>
+                <div className={`${creances > 0 ? "bg-amber-50 border-amber-200" : "bg-gray-50 border-gray-200"} border rounded-2xl p-4`}>
+                  <p className={`${creances > 0 ? "text-amber-700" : "text-gray-400"} text-xs font-bold uppercase mb-1`}>
                     Reste a encaisser
                   </p>
-                  <p className={`font-black text-2xl ${creances > 0 ? "text-amber-800" : "text-gray-500"}`}>
+                  <p className={`font-black text-lg ${creances > 0 ? "text-amber-800" : "text-gray-500"}`}>
                     {formatPrix(creances)}
                   </p>
-                  <p className={`${creances > 0 ? "text-amber-600" : "text-gray-400"} text-xs mt-2`}>
-                    {nbClientsDevant} client(s) doivent encore
+                  <p className={`${creances > 0 ? "text-amber-600" : "text-gray-400"} text-xs mt-1`}>
+                    {nbClientsDevant} client(s)
                   </p>
                 </div>
               </div>
 
-              {/* Lien relances */}
               {creances > 0 && (
                 <Link to="/admin/orders"
                   className="block bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 hover:bg-amber-100 transition">
@@ -301,15 +374,15 @@ export default function Caisse() {
                     {formatPrix(creances)} a recuperer aupres de {nbClientsDevant} client(s)
                   </p>
                   <p className="text-amber-600 text-xs mt-0.5">
-                    Clique ici pour voir les commandes non soldees et faire tes relances
+                    Clique pour voir les commandes non soldees
                   </p>
                 </Link>
               )}
 
-              {/* Encaissements par moyen */}
+              {/* Entrees par moyen */}
               {Object.keys(parMoyen).length > 0 && (
                 <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6">
-                  <h3 className="font-bold text-base mb-4">Encaissements par moyen de paiement</h3>
+                  <h3 className="font-bold text-base mb-4">Entrees par moyen de paiement</h3>
                   <div className="space-y-3">
                     {Object.entries(parMoyen).sort((a, b) => b[1] - a[1]).map(([moyen, montant]) => {
                       const pct = totalRecettes > 0 ? Math.round(montant / totalRecettes * 100) : 0;
@@ -320,7 +393,7 @@ export default function Caisse() {
                             <span className="font-semibold">{formatPrix(montant)} ({pct}%)</span>
                           </div>
                           <div className="w-full bg-gray-100 rounded-full h-2">
-                            <div className="bg-green-500 h-2 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                            <div className="bg-green-500 h-2 rounded-full" style={{ width: `${pct}%` }} />
                           </div>
                         </div>
                       );
@@ -343,7 +416,7 @@ export default function Caisse() {
                             <span className="font-semibold">{formatPrix(montant)} ({pct}%)</span>
                           </div>
                           <div className="w-full bg-gray-100 rounded-full h-2">
-                            <div className="bg-red-500 h-2 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                            <div className="bg-red-500 h-2 rounded-full" style={{ width: `${pct}%` }} />
                           </div>
                         </div>
                       );
@@ -356,10 +429,11 @@ export default function Caisse() {
               <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                 <div className="p-4 border-b border-gray-100 flex items-center justify-between flex-wrap gap-3">
                   <h3 className="font-bold text-base">Mouvements de caisse</h3>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
                     {[
                       { id: "tout", label: "Tout" },
                       { id: "recettes", label: "Entrees" },
+                      { id: "autres", label: "Hors ventes" },
                       { id: "depenses", label: "Sorties" },
                     ].map(o => (
                       <button key={o.id} onClick={() => setOnglet(o.id)}
@@ -372,14 +446,18 @@ export default function Caisse() {
 
                 {filtrees.length === 0 ? (
                   <div className="text-center py-12 text-gray-400">
-                    <p className="text-sm">Aucun mouvement enregistre</p>
+                    <p className="text-sm">Aucun mouvement</p>
                   </div>
                 ) : (
                   <div className="divide-y divide-gray-50">
                     {filtrees.map(op => (
                       <div key={op.id} className="flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition">
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-black flex-shrink-0 ${op.type === "recette" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                          <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-black flex-shrink-0 ${
+                            op.type === "recette"
+                              ? (op.source === "manuelle" ? "bg-teal-100 text-teal-700" : "bg-green-100 text-green-700")
+                              : "bg-red-100 text-red-700"
+                          }`}>
                             {op.type === "recette" ? "+" : "-"}
                           </div>
                           <div className="min-w-0">
@@ -389,6 +467,11 @@ export default function Caisse() {
                               <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
                                 {op.categorie}
                               </span>
+                              {op.source === "manuelle" && op.moyen && (
+                                <span className="text-xs bg-teal-50 text-teal-600 px-2 py-0.5 rounded-full">
+                                  {op.moyen}
+                                </span>
+                              )}
                               {op.note && (
                                 <span className="text-xs text-gray-400 italic">{op.note}</span>
                               )}
@@ -396,11 +479,18 @@ export default function Caisse() {
                           </div>
                         </div>
                         <div className="flex items-center gap-3 flex-shrink-0">
-                          <span className={`font-black text-sm md:text-base ${op.type === "recette" ? "text-green-600" : "text-red-600"}`}>
+                          <span className={`font-black text-sm md:text-base ${
+                            op.type === "recette"
+                              ? (op.source === "manuelle" ? "text-teal-600" : "text-green-600")
+                              : "text-red-600"
+                          }`}>
                             {op.type === "recette" ? "+" : "-"}{formatPrix(op.montant)}
                           </span>
                           {op.suppressible && (
-                            <button onClick={() => supprimerDepense(op.id)}
+                            <button
+                              onClick={() => op.type === "recette"
+                                ? supprimerRecette(op.id)
+                                : supprimerDepense(op.id)}
                               className="text-gray-300 hover:text-red-500 transition text-lg">
                               x
                             </button>
@@ -423,45 +513,110 @@ export default function Caisse() {
         </main>
       </div>
 
-      {/* Modal depense */}
-      {showForm && (
+      {/* ===== MODAL RECETTE ===== */}
+      {showRecette && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center justify-center">
+          <div className="bg-white rounded-t-2xl md:rounded-2xl p-6 w-full md:max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h3 className="font-black text-lg">Nouvelle recette</h3>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Une entree d'argent qui ne vient pas d'une commande
+                </p>
+              </div>
+              <button onClick={() => setShowRecette(false)} className="text-gray-400 text-xl">X</button>
+            </div>
+
+            <form onSubmit={ajouterRecette} className="space-y-4">
+              <div>
+                <label className="text-sm text-gray-500 block mb-1">Description</label>
+                <input value={formRec.description}
+                  onChange={e => setFormRec(f => ({ ...f, description: e.target.value }))} required
+                  className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400"
+                  placeholder="Ex: Vente d'un telephone a un voisin" />
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-500 block mb-1">Montant (FCFA)</label>
+                <input type="number" value={formRec.montant}
+                  onChange={e => setFormRec(f => ({ ...f, montant: e.target.value }))}
+                  required min="1" autoFocus
+                  className="w-full border-2 border-green-300 rounded-lg px-4 py-3 text-lg focus:outline-none focus:border-green-500 font-black text-green-700"
+                  placeholder="25000" />
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-500 block mb-1">Type de recette</label>
+                <select value={formRec.categorie}
+                  onChange={e => setFormRec(f => ({ ...f, categorie: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400 bg-white">
+                  {CATEGORIES_RECETTES.map(c => <option key={c}>{c}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-500 block mb-1">Moyen de paiement</label>
+                <select value={formRec.moyen}
+                  onChange={e => setFormRec(f => ({ ...f, moyen: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400 bg-white">
+                  {MOYENS.map(m => <option key={m}>{m}</option>)}
+                </select>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setShowRecette(false)}
+                  className="flex-1 border border-gray-200 text-gray-600 py-3 rounded-lg font-medium">
+                  Annuler
+                </button>
+                <button type="submit" disabled={saving}
+                  className="flex-1 bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700 disabled:opacity-50">
+                  {saving ? "Enregistrement..." : "Enregistrer la recette"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ===== MODAL DEPENSE ===== */}
+      {showDepense && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center justify-center">
           <div className="bg-white rounded-t-2xl md:rounded-2xl p-6 w-full md:max-w-md">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="font-black text-lg">Ajouter une depense</h3>
-              <button onClick={() => setShowForm(false)} className="text-gray-400 text-xl">X</button>
+              <h3 className="font-black text-lg">Nouvelle depense</h3>
+              <button onClick={() => setShowDepense(false)} className="text-gray-400 text-xl">X</button>
             </div>
             <form onSubmit={ajouterDepense} className="space-y-4">
               <div>
                 <label className="text-sm text-gray-500 block mb-1">Description</label>
-                <input value={form.description}
-                  onChange={e => setForm(f => ({ ...f, description: e.target.value }))} required
+                <input value={formDep.description}
+                  onChange={e => setFormDep(f => ({ ...f, description: e.target.value }))} required
                   className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400"
                   placeholder="Ex: Achat 10 ballons de foot" />
               </div>
               <div>
                 <label className="text-sm text-gray-500 block mb-1">Montant (FCFA)</label>
-                <input type="number" value={form.montant}
-                  onChange={e => setForm(f => ({ ...f, montant: e.target.value }))} required min="1"
+                <input type="number" value={formDep.montant}
+                  onChange={e => setFormDep(f => ({ ...f, montant: e.target.value }))} required min="1"
                   className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400"
                   placeholder="15000" />
               </div>
               <div>
                 <label className="text-sm text-gray-500 block mb-1">Categorie</label>
-                <select value={form.categorie}
-                  onChange={e => setForm(f => ({ ...f, categorie: e.target.value }))}
+                <select value={formDep.categorie}
+                  onChange={e => setFormDep(f => ({ ...f, categorie: e.target.value }))}
                   className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-gray-400 bg-white">
                   {CATEGORIES_DEPENSES.map(c => <option key={c}>{c}</option>)}
                 </select>
               </div>
               <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setShowForm(false)}
+                <button type="button" onClick={() => setShowDepense(false)}
                   className="flex-1 border border-gray-200 text-gray-600 py-3 rounded-lg font-medium">
                   Annuler
                 </button>
                 <button type="submit" disabled={saving}
                   className="flex-1 bg-red-600 text-white py-3 rounded-lg font-medium hover:bg-red-700 disabled:opacity-50">
-                  {saving ? "Enregistrement..." : "Enregistrer la depense"}
+                  {saving ? "Enregistrement..." : "Enregistrer"}
                 </button>
               </div>
             </form>
