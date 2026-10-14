@@ -18,6 +18,7 @@ const NAV_LINKS = [
   { to: "/admin/affiche", label: "Affiche publicitaire", active: true },
   { to: "/admin/associes", label: "Associes" },
   { to: "/shop", label: "Voir la boutique" },
+  { to: "/admin/dettes", label: "Mes dettes" },
 ];
 
 const BLEU = "#0B2447";
