@@ -41,6 +41,7 @@ const NAV_LINKS = [
   { to: "/admin/affiche", label: "Affiche publicitaire" },
   { to: "/admin/associes", label: "Associes" },
   { to: "/shop", label: "Voir la boutique" },
+  { to: "/admin/flocage", label: "Flocage" },
 ];
 
 function Sidebar() {

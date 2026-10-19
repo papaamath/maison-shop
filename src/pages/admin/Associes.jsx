@@ -17,6 +17,7 @@ const NAV_LINKS = [
   { to: "/admin/photocopie", label: "Photocopie" },
   { to: "/admin/scolaire", label: "Fournitures scolaires" },
   { to: "/admin/dettes", label: "Mes dettes" },
+  { to: "/admin/flocage", label: "Flocage" },
 ];
 
 function Sidebar() {

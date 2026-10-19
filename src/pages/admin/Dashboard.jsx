@@ -102,6 +102,7 @@ export default function Dashboard() {
     { to: "/admin/photocopie", label: "Photocopie" },
     { to: "/admin/scolaire", label: "Fournitures scolaires" },
     { to: "/admin/dettes", label: "Mes dettes" },
+    { to: "/admin/flocage", label: "Flocage" },
   ];
 
   return (
