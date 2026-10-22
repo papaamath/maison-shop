@@ -163,6 +163,37 @@ async function genererDocument(venteBrute, type = "facture") {
   const BLEU = [30, 80, 160];
   const ORANGE = [249, 115, 22];
 
+  const H = docu.internal.pageSize.height;
+
+  // Pied de page dessine sur chaque page
+  function piedDePage(numPage) {
+    docu.setFillColor(...GRIS_CLAIR);
+    docu.rect(0, H - 26, 210, 26, "F");
+    docu.setDrawColor(...ORANGE);
+    docu.setLineWidth(1.2);
+    docu.line(0, H - 26, 210, H - 26);
+
+    docu.setTextColor(...NOIR);
+    docu.setFont("helvetica", "bold");
+    docu.setFontSize(9);
+    docu.text(
+      estDevis ? "Au plaisir de vous servir !" : "Merci de votre confiance !",
+      105, H - 16, { align: "center" }
+    );
+    docu.setFont("helvetica", "normal");
+    docu.setFontSize(8);
+    docu.setTextColor(...GRIS);
+    docu.text(
+      "B2S-STORE  |  Mbed Fass Yeumbeul, Dakar  |  +221 76 873 07 31  |  b2s-store.vercel.app",
+      105, H - 9, { align: "center" }
+    );
+    if (numPage) {
+      docu.setFontSize(7);
+      docu.text(`Page ${numPage}`, 198, H - 3, { align: "right" });
+    }
+  }
+
+  // ===== EN-TETE =====
   docu.setFillColor(...NOIR);
   docu.rect(0, 0, 210, 48, "F");
 
@@ -204,6 +235,7 @@ async function genererDocument(venteBrute, type = "facture") {
   docu.setFontSize(8);
   docu.text(estDevis ? "PROPOSITION" : "PAYE", 178, 42.5, { align: "center" });
 
+  // ===== BLOC CLIENT =====
   docu.setFillColor(...GRIS_CLAIR);
   docu.rect(0, 53, 210, 26, "F");
 
@@ -222,6 +254,7 @@ async function genererDocument(venteBrute, type = "facture") {
   docu.setTextColor(...GRIS);
   docu.text(`Date : ${clean(formatDateLongue(v.createdAt))}`, 140, 71);
 
+  // ===== TABLEAU =====
   autoTable(docu, {
     startY: 87,
     head: [["Designation", "Qte", "Prix unitaire", "Montant"]],
@@ -241,11 +274,31 @@ async function genererDocument(venteBrute, type = "facture") {
       2: { cellWidth: 37, halign: "right" },
       3: { cellWidth: 38, halign: "right" },
     },
-    margin: { left: 15, right: 15 },
+    margin: { left: 15, right: 15, bottom: 34 },
     styles: { lineColor: [225, 223, 219], lineWidth: 0.1 },
+    didDrawPage: data => piedDePage(data.pageNumber),
   });
 
+  // ===== TOTAL, AVEC SAUT DE PAGE SI BESOIN =====
   let y = docu.lastAutoTable.finalY + 12;
+
+  // Place necessaire : total + mentions (+ signature pour un devis)
+  const placeNecessaire = estDevis ? 70 : 40;
+
+  if (y + placeNecessaire > H - 30) {
+    docu.addPage();
+    piedDePage(docu.getNumberOfPages());
+    y = 25;
+
+    // Rappel du numero en haut de la nouvelle page
+    docu.setTextColor(...GRIS);
+    docu.setFont("helvetica", "normal");
+    docu.setFontSize(9);
+    docu.text(
+      `${estDevis ? "Devis" : "Facture"} ${clean(numeroDoc(v, estDevis ? "DV" : "FA"))} — suite`,
+      15, 16
+    );
+  }
 
   docu.setFillColor(...NOIR);
   docu.rect(125, y, 70, 14, "F");
@@ -260,41 +313,22 @@ async function genererDocument(venteBrute, type = "facture") {
   docu.setTextColor(...GRIS);
   docu.setFont("helvetica", "normal");
   docu.setFontSize(9);
+
   if (estDevis) {
     docu.text("Devis valable 15 jours a compter de la date d'emission.", 15, y);
     docu.text("Les prix peuvent varier en fonction de la disponibilite du stock.", 15, y + 6);
 
-    y += 20;
     docu.setDrawColor(...GRIS);
     docu.setLineWidth(0.3);
-    docu.line(120, y + 16, 195, y + 16);
+    docu.line(120, y + 32, 195, y + 32);
     docu.setFontSize(8);
-    docu.text("Bon pour accord — signature du client", 157, y + 21, { align: "center" });
+    docu.text("Bon pour accord — signature du client", 157, y + 37, { align: "center" });
   } else {
     docu.text(
       `Facture acquittee le ${clean(formatDateLongue(v.createdAt))}. Montant recu : ${montantTexte(v.total)}.`,
       15, y
     );
   }
-
-  const h = docu.internal.pageSize.height;
-  docu.setFillColor(...GRIS_CLAIR);
-  docu.rect(0, h - 26, 210, 26, "F");
-  docu.setDrawColor(...ORANGE);
-  docu.setLineWidth(1.2);
-  docu.line(0, h - 26, 210, h - 26);
-
-  docu.setTextColor(...NOIR);
-  docu.setFont("helvetica", "bold");
-  docu.setFontSize(9);
-  docu.text(estDevis ? "Au plaisir de vous servir !" : "Merci de votre confiance !", 105, h - 16, { align: "center" });
-  docu.setFont("helvetica", "normal");
-  docu.setFontSize(8);
-  docu.setTextColor(...GRIS);
-  docu.text(
-    "B2S-STORE  |  Mbed Fass Yeumbeul, Dakar  |  +221 76 873 07 31  |  b2s-store.vercel.app",
-    105, h - 9, { align: "center" }
-  );
 
   const nomFichier = clean(v.client || "client").replace(/\s+/g, "-").toLowerCase();
   docu.save(`${estDevis ? "devis" : "facture"}-${nomFichier}-${numeroDoc(v, estDevis ? "DV" : "FA")}.pdf`);
