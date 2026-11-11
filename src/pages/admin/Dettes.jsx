@@ -19,6 +19,7 @@ const NAV_LINKS = [
   { to: "/admin/associes", label: "Associes" },
   { to: "/shop", label: "Voir la boutique" },
   { to: "/admin/flocage", label: "Flocage" },
+  { to: "/admin/patrimoine", label: "Biens & charges" },
 ];
 
 const CATEGORIES = [

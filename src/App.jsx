@@ -28,6 +28,7 @@ import Scolaire from "./pages/admin/Scolaire";
 import Affiche from "./pages/admin/Affiche";
 import Dettes from "./pages/admin/Dettes";
 import Flocage from "./pages/admin/Flocage";
+import Patrimoine from "./pages/admin/Patrimoine";
 
 export default function App() {
   return (
@@ -63,6 +64,7 @@ export default function App() {
             <Route path="/admin/affiche" element={<ProtectedRoute><Affiche /></ProtectedRoute>} />
             <Route path="/admin/dettes" element={<ProtectedRoute><Dettes /></ProtectedRoute>} />
             <Route path="/admin/flocage" element={<ProtectedRoute><Flocage /></ProtectedRoute>} />
+            <Route path="/admin/patrimoine" element={<ProtectedRoute><Patrimoine /></ProtectedRoute>} />
             
           </Routes>
         </BrowserRouter>

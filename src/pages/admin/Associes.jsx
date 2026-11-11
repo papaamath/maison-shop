@@ -18,6 +18,7 @@ const NAV_LINKS = [
   { to: "/admin/scolaire", label: "Fournitures scolaires" },
   { to: "/admin/dettes", label: "Mes dettes" },
   { to: "/admin/flocage", label: "Flocage" },
+  { to: "/admin/patrimoine", label: "Biens & charges" },
 ];
 
 function Sidebar() {

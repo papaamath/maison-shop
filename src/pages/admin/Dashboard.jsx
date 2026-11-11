@@ -103,6 +103,7 @@ export default function Dashboard() {
     { to: "/admin/scolaire", label: "Fournitures scolaires" },
     { to: "/admin/dettes", label: "Mes dettes" },
     { to: "/admin/flocage", label: "Flocage" },
+    { to: "/admin/patrimoine", label: "Biens & charges" },
   ];
 
   return (
